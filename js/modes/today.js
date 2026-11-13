@@ -389,6 +389,9 @@ export async function startToday(root, ctx) {
     );
     bodyEl.replaceChildren(card);
     if (extraBottom) bottomEl.replaceChildren(extraBottom);
+    // 不正解の語を最後に足したときは、上部の「何問目 / 全体」の全体も増やす
+    const countEl = study.querySelector('.study-count');
+    if (countEl) countEl.textContent = `${Math.min(index + 1, queue.length)} / ${queue.length}`;
     const isLast = index + 1 >= queue.length;
     const nextBtn = el('button', { type: 'button', class: 'btn btn-primary btn-next', onclick: goNext },
       isLast ? '結果を見る' : '次へ');

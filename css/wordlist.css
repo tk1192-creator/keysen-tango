@@ -1,0 +1,100 @@
+/* 単語一覧（js/modes/wordlist.js）。style.css の変数・クラスを使う */
+
+/* 習得状況の 4 色（色だけに頼らず、記号と文字も出す） */
+:root {
+  --wl-new: #5d6878;      --wl-new-bg: #eef0f3;
+  --wl-learning: #9a5b00; --wl-learning-bg: #fff3e0;
+  --wl-learned: #1f5fa8;  --wl-learned-bg: #e6effa;
+  --wl-mastered: #6b3fa0; --wl-mastered-bg: #f1e9fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wl-new: #a3adbb;      --wl-new-bg: #252c36;
+    --wl-learning: #ffc277; --wl-learning-bg: #3a2a12;
+    --wl-learned: #9cc8f5;  --wl-learned-bg: #16283d;
+    --wl-mastered: #d2b6f5; --wl-mastered-bg: #2e2140;
+  }
+}
+
+.wl-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.wl-title { margin: 0; font-size: 22px; }
+
+/* 検索と絞り込み */
+.wl-filters { padding: 12px 16px; }
+.wl-search {
+  width: 100%; min-height: 52px; padding: 8px 14px; margin-bottom: 8px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); color: var(--text); font-size: 18px;
+}
+.wl-search:focus { outline: none; border-color: var(--primary); }
+.wl-selects { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.wl-field { min-width: 0; }
+.wl-field:first-child { grid-column: 1 / -1; }
+.wl-field .select { width: 100%; }
+
+.wl-count { margin: 0 0 8px; font-size: 18px; }
+.wl-count-num { font-size: 22px; font-variant-numeric: tabular-nums; }
+.wl-count .small { margin-left: 6px; }
+
+/* 一覧（行は押せるボタン） */
+.wl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.wl-item { margin: 0; }
+.wl-row {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  width: 100%; min-height: 64px; padding: 10px 12px 10px 14px;
+  border: 1px solid var(--line); border-left-width: 6px; border-radius: 12px;
+  background: var(--surface); color: var(--text); text-align: left; font: inherit; cursor: pointer;
+}
+.wl-row:active { transform: scale(0.99); }
+.wl-row:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.wl-row-new { border-left-color: var(--wl-new); }
+.wl-row-learning { border-left-color: var(--wl-learning); }
+.wl-row-learned { border-left-color: var(--wl-learned); }
+.wl-row-mastered { border-left-color: var(--wl-mastered); }
+.wl-row-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.wl-word { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+.wl-row .pos { font-size: 14px; }
+.wl-ex { margin-left: auto; font-size: 14px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wl-row-bottom { display: flex; align-items: baseline; gap: 8px; }
+.wl-meaning { font-size: 16px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* 習得状況の印 */
+.wl-status {
+  display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto;
+  padding: 0 8px; border-radius: 999px; border: 1px solid currentColor;
+  font-size: 14px; font-weight: 700; line-height: 1.6; white-space: nowrap;
+}
+.wl-status-new { color: var(--wl-new); background: var(--wl-new-bg); }
+.wl-status-learning { color: var(--wl-learning); background: var(--wl-learning-bg); }
+.wl-status-learned { color: var(--wl-learned); background: var(--wl-learned-bg); }
+.wl-status-mastered { color: var(--wl-mastered); background: var(--wl-mastered-bg); }
+
+.wl-more { margin-top: 12px; }
+.wl-sentinel { height: 1px; }
+
+/* 詳細（下部シート） */
+.wl-backdrop {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.wl-sheet {
+  display: flex; flex-direction: column;
+  width: 100%; max-width: 560px; max-height: 88vh; max-height: 88dvh;
+  background: var(--surface); color: var(--text);
+  border-radius: 18px 18px 0 0; box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
+}
+.wl-sheet:focus { outline: none; }
+.wl-sheet-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 16px 16px 8px; }
+.wl-sheet-body p { margin: 0 0 8px; }
+.wl-sheet-foot {
+  flex: 0 0 auto; padding: 4px 16px calc(env(safe-area-inset-bottom) + 12px);
+  border-top: 1px solid var(--line);
+}
+.wl-close { margin-bottom: 0; }
+.wl-sub { margin: 16px 0 6px; font-size: 16px; color: var(--muted); }
+.wl-info { margin: 0; }
+.wl-info dd .wl-status { vertical-align: middle; }
+.wl-others-list { list-style: none; margin: 0; padding: 0; font-size: 15px; }
+.wl-others-list li { display: flex; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.wl-others-num { flex: 0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; }

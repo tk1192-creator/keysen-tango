@@ -5,9 +5,13 @@ import { todayStr, buildDailyMenu, stageSummary } from './srs.js';
 import { loadProgress, loadSettings, saveSettings, dayLog, streak, isAvailable } from './store.js';
 import { startToday } from './modes/today.js';
 import { startListening } from './modes/listening.js';
+import { startCompose } from './modes/compose.js';
+import { startDictation } from './modes/dictation.js';
+import { startWeak, countWeakWords } from './modes/weak.js';
+import { startWordList } from './modes/wordlist.js';
 
 const $ = (id) => document.getElementById(id);
-const SCREENS = ['loading', 'setup', 'home', 'study', 'listening', 'settings'];
+const SCREENS = ['loading', 'setup', 'home', 'study', 'listening', 'mode', 'settings'];
 const DEFAULT_SETTINGS = { newPerDay: 10, dailyGoal: 20 };
 const NEW_PER_DAY_CHOICES = Array.from({ length: 16 }, (_, i) => i + 5); // 5〜20
 const DAILY_GOAL_CHOICES = [10, 15, 20, 25, 30, 40, 50, 60];
@@ -125,6 +129,12 @@ function renderHome(words) {
 
   // 未確認の語
   $('home-unverified').textContent = words.filter((w) => w.verified !== true).length;
+
+  // 苦手な語の数（苦手復習のボタンに出す）
+  const weakCount = safe(() => countWeakWords(words, progress), 0) || 0;
+  $('home-weak-desc').textContent = weakCount
+    ? `まちがえた語だけを出題する（苦手な語 ${weakCount} 語）`
+    : 'まちがえた語だけを出題する（いまは苦手な語はありません）';
 }
 
 function renderStage(st) {
@@ -224,6 +234,40 @@ function onListeningExit() {
   });
 }
 
+// ---------- 瞬間英作文・ディクテーション・苦手復習・単語一覧 ----------
+// どのモードも同じ画面（screen-mode）の中に描く。入口の形は js/MODES.md のとおり
+async function onStartMode(startFn, label) {
+  $('home-error').hidden = true;
+  try {
+    const d = await loadData();
+    const sentences = [...d.sentencesById.values()].sort((a, b) => a.id - b.id);
+    show('mode');
+    await startFn($('mode-root'), {
+      words: d.words,
+      sentences,
+      sentencesById: d.sentencesById,
+      getAudioBlob,
+      onExit: onModeExit,
+    });
+  } catch (e) {
+    console.error(e);
+    stop();
+    $('mode-root').replaceChildren();
+    await openHome();
+    $('home-error').textContent = `${label}を始められませんでした（${e.message || e}）。`;
+    $('home-error').hidden = false;
+  }
+}
+
+function onModeExit() {
+  stop();
+  $('mode-root').replaceChildren();
+  openHome().catch((e) => {
+    $('home-error').textContent = `ホームを表示できませんでした（${e.message || e}）。`;
+    $('home-error').hidden = false;
+  });
+}
+
 // ---------- 設定 ----------
 function fillSelect(sel, values, current, unit) {
   const list = values.includes(current) ? values : [...values, current].sort((a, b) => a - b);
@@ -277,6 +321,10 @@ async function start() {
   $('btn-reimport').addEventListener('click', onReimport);
   $('btn-start-today').addEventListener('click', onStartToday);
   $('btn-start-listening').addEventListener('click', onStartListening);
+  $('btn-start-compose').addEventListener('click', () => onStartMode(startCompose, '瞬間英作文'));
+  $('btn-start-dictation').addEventListener('click', () => onStartMode(startDictation, 'ディクテーション'));
+  $('btn-start-weak').addEventListener('click', () => onStartMode(startWeak, '苦手復習'));
+  $('btn-start-wordlist').addEventListener('click', () => onStartMode(startWordList, '単語一覧'));
   $('set-new-per-day').addEventListener('change', (ev) => onStudySettingChange('newPerDay', ev.target));
   $('set-daily-goal').addEventListener('change', (ev) => onStudySettingChange('dailyGoal', ev.target));
   // 日をまたいで開き直したときに、ホームの数字を今日の分に直す

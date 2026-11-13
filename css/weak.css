@@ -1,0 +1,24 @@
+/* 苦手復習（js/modes/weak.js）専用。共通の部品は css/style.css のものを使う */
+
+.weak-head { justify-content: space-between; }
+.weak-title { margin: 0; font-size: 22px; }
+
+.weak-summary { font-size: 18px; }
+.weak-num { font-size: 32px; }
+
+.weak-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+.weak-list { list-style: none; margin: 0; padding: 0; }
+.weak-item { padding: 10px 0; border-top: 1px solid var(--line); }
+.weak-item:first-child { border-top: none; }
+.weak-item-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.weak-word { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+.weak-wrong { margin-left: auto; font-size: 15px; color: var(--error); white-space: nowrap; }
+.weak-meaning { font-size: 16px; margin-top: 2px; overflow-wrap: anywhere; }
+
+.weak-badge-overcome {
+  font-size: 13px; line-height: 1.6; padding: 0 6px;
+  border: 1px solid var(--ok); border-radius: 6px; color: var(--ok); background: var(--ok-bg);
+  font-weight: 700;
+}
+.weak-overcome-line { font-size: 16px; margin-top: 8px !important; }

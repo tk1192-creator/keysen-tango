@@ -1,0 +1,70 @@
+/* ---------- 瞬間英作文（js/modes/compose.js） ---------- */
+/* style.css の変数・クラス（.card / .btn / .study など）を使い、今日の学習・例文リスニングと見た目をそろえる */
+
+.compose-howto { margin: 0 0 12px; }
+.compose .study-bottom .muted.small:empty { display: none; }
+
+.compose-ja { font-size: 20px; line-height: 1.6; }
+.compose-ja-btn { min-height: 52px; }
+
+.compose-think {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 12px 0 4px !important; font-size: 17px; color: var(--muted);
+}
+.compose-elapsed { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+
+.compose-answer { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.compose-answer-label { margin: 0 !important; font-size: 15px; color: var(--muted); font-weight: 600; }
+
+/* この文の単語 */
+.compose-words { margin-top: 8px; }
+.compose-words-title { margin: 0 0 4px !important; font-size: 14px; color: var(--muted); font-weight: 600; }
+.compose-word-list { list-style: none; margin: 0; padding: 0; font-size: 15px; }
+.compose-word-list li {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
+  padding: 4px 0; border-top: 1px solid var(--line);
+}
+.compose-word { font-weight: 700; overflow-wrap: anywhere; }
+.compose-meaning { color: var(--muted); overflow-wrap: anywhere; }
+
+/* 自己採点 */
+.compose-grade-label { margin: 8px 0 4px; font-size: 17px; font-weight: 700; }
+.compose-grades { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.compose-grade {
+  flex-direction: column; gap: 0; margin: 0;
+  min-height: 72px; padding: 6px 4px; font-size: 18px;
+}
+.compose-grade .grade-mark { font-size: 28px; line-height: 1.1; font-weight: 800; }
+.compose-grade .grade-text { font-size: 15px; font-weight: 600; }
+.grade-mark { font-weight: 800; }
+.grade-ok .grade-mark, .grade-mark.grade-ok { color: var(--ok); }
+.grade-ng .grade-mark, .grade-mark.grade-ng { color: var(--error); }
+.grade-partial .grade-mark, .grade-mark.grade-partial { color: var(--text); }
+.compose-grade.grade-ok { border: 2px solid var(--ok); }
+.compose-grade.grade-ng { border: 2px solid var(--error); }
+
+.compose-graded {
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 0; font-size: 20px; font-weight: 700;
+}
+.compose-graded .grade-mark { font-size: 28px; }
+
+/* 終了画面 */
+.compose-score { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0 12px; }
+.compose-score-box {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 4px; border: 1px solid var(--line); border-radius: 12px;
+}
+.compose-score-box .grade-mark { font-size: 26px; line-height: 1.1; }
+.compose-score-label { font-size: 14px; color: var(--muted); }
+.compose-score-num { font-size: 32px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+
+.compose-retry-list { list-style: none; margin: 0; padding: 0; }
+.compose-retry-list li {
+  display: grid; grid-template-columns: 1.6em auto 1fr; gap: 4px 8px; align-items: baseline;
+  padding: 8px 0; border-top: 1px solid var(--line);
+}
+.compose-retry-list .grade-mark { font-size: 20px; text-align: center; }
+.compose-retry-num { font-size: 15px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.compose-retry-en { font-size: 17px; overflow-wrap: anywhere; }
+.compose-allok { font-size: 20px; font-weight: 700; text-align: center; color: var(--ok); }

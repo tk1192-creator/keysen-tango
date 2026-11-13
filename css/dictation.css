@@ -1,0 +1,54 @@
+/* ---------- ディクテーション（js/modes/dictation.js） ---------- */
+/* 共通の部品（.study / .card / .btn / .choice など）は style.css のものを使う */
+
+.dictation .study-bottom .muted.small:empty { display: none; }
+.dictation .study-bottom .btn + .btn { margin-top: 8px; }
+
+.dict-lead { font-size: 18px; }
+
+/* ヒント：語数を「_ _ _」で見せる */
+.dict-hint { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.dict-hint-pattern {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 22px; letter-spacing: 0.08em; overflow-wrap: anywhere;
+}
+
+/* 書き取りの入力欄（iPhone で拡大されないよう 16px 以上） */
+.dict-input {
+  display: block; width: 100%; min-height: 120px; margin-top: 4px; padding: 10px 12px;
+  border: 2px solid var(--line); border-radius: 12px;
+  background: var(--surface); color: var(--text);
+  font-size: 20px; line-height: 1.5; font-family: inherit; resize: vertical;
+}
+.dict-input:focus { outline: none; border-color: var(--primary); }
+
+/* 答え合わせ：語ごとの結果（色だけでなく ○ × ― ＋ の印も出す） */
+.dict-score-detail { font-size: 18px; font-weight: 500; color: var(--muted); }
+.dict-words { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.dict-chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  padding: 4px 10px; border-radius: 10px; border: 2px solid var(--line);
+  font-size: 19px; line-height: 1.4; overflow-wrap: anywhere;
+}
+.dict-mark { font-weight: 800; flex: 0 0 auto; }
+.dict-chip.is-ok { border-color: var(--ok); background: var(--ok-bg); }
+.dict-chip.is-ok .dict-mark { color: var(--ok); }
+.dict-chip.is-wrong { border-color: var(--error); background: var(--error-bg); }
+.dict-chip.is-wrong .dict-mark { color: var(--error); }
+.dict-chip.is-missing { border-style: dashed; border-color: var(--error); color: var(--muted); }
+.dict-chip.is-missing .dict-mark { color: var(--error); }
+.dict-chip.is-extra { border-style: dotted; border-color: var(--muted); color: var(--muted); }
+.dict-got { text-decoration-thickness: 2px; }
+.dict-legend { margin-top: 4px !important; }
+.dict-typed { font-size: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 終了画面：文ごとの点数 */
+.dict-result-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.dict-result-list li {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 6px 0; border-top: 1px solid var(--line); font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.dict-result-list li:first-child { border-top: none; }
+.dict-result-list li.is-low .dict-result-pct { color: var(--error); font-weight: 700; }
+.dictation .missed-list li span[lang="en"] { display: block; overflow-wrap: anywhere; }

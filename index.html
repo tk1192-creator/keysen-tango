@@ -6,6 +6,10 @@
   <meta name="theme-color" content="#2f5d8a">
   <title>英単語マスター</title>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/compose.css">
+  <link rel="stylesheet" href="css/dictation.css">
+  <link rel="stylesheet" href="css/weak.css">
+  <link rel="stylesheet" href="css/wordlist.css">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <script type="module" src="js/pwa.js"></script>
@@ -74,6 +78,22 @@
             <span class="mode-name">例文リスニング</span>
             <span class="mode-desc muted">範囲を選んで、例文の音声を続けて聞く</span>
           </button>
+          <button id="btn-start-compose" class="btn mode-btn" type="button">
+            <span class="mode-name">瞬間英作文</span>
+            <span class="mode-desc muted">日本語を聞いて英語で言い、英語の音声で確かめる</span>
+          </button>
+          <button id="btn-start-dictation" class="btn mode-btn" type="button">
+            <span class="mode-name">ディクテーション</span>
+            <span class="mode-desc muted">英語を聞いて書き取る（語ごとに自動採点）</span>
+          </button>
+          <button id="btn-start-weak" class="btn mode-btn" type="button">
+            <span class="mode-name">苦手復習</span>
+            <span class="mode-desc muted" id="home-weak-desc">まちがえた語だけを出題する</span>
+          </button>
+          <button id="btn-start-wordlist" class="btn mode-btn" type="button">
+            <span class="mode-name">単語一覧</span>
+            <span class="mode-desc muted">検索・ステージ別に見る。覚えた度合いを色で確認</span>
+          </button>
         </div>
       </div>
 
@@ -99,6 +119,11 @@
     <!-- 例文リスニング（js/modes/listening.js が描画する） -->
     <section id="screen-listening" class="screen" hidden>
       <div id="listening-root"></div>
+    </section>
+
+    <!-- 瞬間英作文・ディクテーション・苦手復習・単語一覧（js/modes/*.js が描画する） -->
+    <section id="screen-mode" class="screen" hidden>
+      <div id="mode-root"></div>
     </section>
 
     <!-- 設定 -->
