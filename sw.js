@@ -26,7 +26,7 @@
 //   3) node --test tests/pwa.test.mjs で、一覧のファイルが実在するか、js の入れ忘れがないかを確かめる。
 
 const CACHE_PREFIX = 'kk-app-';
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
 // 電波が弱いとき、ネットワークの返事を待つ最大の時間（ミリ秒）。過ぎたらキャッシュで表示する。
@@ -51,10 +51,14 @@ const APP_FILES = [
   './js/modes/dictation.js',
   './js/modes/weak.js',
   './js/modes/wordlist.js',
+  './js/player.js',
+  './js/modes/mylisten.js',
+  './js/modes/mylisten-list.js',
   './css/compose.css',
   './css/dictation.css',
   './css/weak.css',
   './css/wordlist.css',
+  './css/mylisten.css',
   './vendor/fflate.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="css/dictation.css">
   <link rel="stylesheet" href="css/weak.css">
   <link rel="stylesheet" href="css/wordlist.css">
+  <link rel="stylesheet" href="css/mylisten.css">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <script type="module" src="js/pwa.js"></script>
@@ -71,6 +72,8 @@
         <p id="home-done-message" class="muted small" hidden>今日の分は終わりました。また明日やりましょう。</p>
       </div>
 
+      <button id="btn-mylisten-resume" class="btn ml-resume-btn" type="button" hidden>続きから再生</button>
+
       <div class="card other-modes">
         <h3>ほかの学習</h3>
         <div class="mode-list">
@@ -89,6 +92,10 @@
           <button id="btn-start-weak" class="btn mode-btn" type="button">
             <span class="mode-name">苦手復習</span>
             <span class="mode-desc muted" id="home-weak-desc">まちがえた語だけを出題する</span>
+          </button>
+          <button id="btn-start-mylisten" class="btn mode-btn" type="button">
+            <span class="mode-name">聞き流し</span>
+            <span class="mode-desc muted">日本語→英語→例文を自動で流して覚える</span>
           </button>
           <button id="btn-start-wordlist" class="btn mode-btn" type="button">
             <span class="mode-name">単語一覧</span>
@@ -121,7 +128,7 @@
       <div id="listening-root"></div>
     </section>
 
-    <!-- 瞬間英作文・ディクテーション・苦手復習・単語一覧（js/modes/*.js が描画する） -->
+    <!-- 瞬間英作文・ディクテーション・苦手復習・単語一覧・聞き流し（js/modes/*.js が描画する） -->
     <section id="screen-mode" class="screen" hidden>
       <div id="mode-root"></div>
     </section>

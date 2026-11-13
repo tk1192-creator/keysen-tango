@@ -9,6 +9,8 @@ import { startCompose } from './modes/compose.js';
 import { startDictation } from './modes/dictation.js';
 import { startWeak, countWeakWords } from './modes/weak.js';
 import { startWordList } from './modes/wordlist.js';
+import { startMyListen, formatResumeLabel } from './modes/mylisten.js';
+import { numberWords, loadMyListen } from './player.js';
 
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['loading', 'setup', 'home', 'study', 'listening', 'mode', 'settings'];
@@ -40,6 +42,12 @@ function fmtDate(iso) {
 
 // ---------- 単語・例文（IndexedDB から一度だけ読む） ----------
 let data = null; // { words, sentencesById }
+let numberedCache = null; // 聞き流しの通し番号（player.numberWords の結果。data と一緒に作り直す）
+
+function numberedWords(words) {
+  if (!numberedCache || numberedCache.words !== words) numberedCache = { words, list: numberWords(words) };
+  return numberedCache.list;
+}
 
 async function loadData() {
   if (data) return data;
@@ -129,6 +137,14 @@ function renderHome(words) {
 
   // 未確認の語
   $('home-unverified').textContent = words.filter((w) => w.verified !== true).length;
+
+  // 聞き流しの続き（前回の位置があるときだけ）
+  const resume = safe(() => {
+    const ml = loadMyListen();
+    return ml && ml.last ? formatResumeLabel(ml.last, numberedWords(words)) : null;
+  }, null);
+  $('btn-mylisten-resume').hidden = !resume;
+  $('btn-mylisten-resume').textContent = resume ? resume.label : '続きから再生';
 
   // 苦手な語の数（苦手復習のボタンに出す）
   const weakCount = safe(() => countWeakWords(words, progress), 0) || 0;
@@ -248,6 +264,7 @@ async function onStartMode(startFn, label) {
       sentencesById: d.sentencesById,
       getAudioBlob,
       onExit: onModeExit,
+      openMyListen,
     });
   } catch (e) {
     console.error(e);
@@ -257,6 +274,15 @@ async function onStartMode(startFn, label) {
     $('home-error').textContent = `${label}を始められませんでした（${e.message || e}）。`;
     $('home-error').hidden = false;
   }
+}
+
+/** 聞き流しを開く（opts：{ startWordId } か { autoResume: true }。無ければ設定画面から） */
+function openMyListen(wordId) {
+  return startMyListenWith(wordId != null ? { startWordId: wordId } : {});
+}
+
+function startMyListenWith(opts) {
+  return onStartMode((root, ctx) => startMyListen(root, ctx, opts), '聞き流し');
 }
 
 function onModeExit() {
@@ -325,6 +351,8 @@ async function start() {
   $('btn-start-dictation').addEventListener('click', () => onStartMode(startDictation, 'ディクテーション'));
   $('btn-start-weak').addEventListener('click', () => onStartMode(startWeak, '苦手復習'));
   $('btn-start-wordlist').addEventListener('click', () => onStartMode(startWordList, '単語一覧'));
+  $('btn-start-mylisten').addEventListener('click', () => startMyListenWith({}));
+  $('btn-mylisten-resume').addEventListener('click', () => startMyListenWith({ autoResume: true }));
   $('set-new-per-day').addEventListener('change', (ev) => onStudySettingChange('newPerDay', ev.target));
   $('set-daily-goal').addEventListener('change', (ev) => onStudySettingChange('dailyGoal', ev.target));
   // 日をまたいで開き直したときに、ホームの数字を今日の分に直す

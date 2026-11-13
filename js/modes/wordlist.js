@@ -33,6 +33,8 @@
 //   - 検索：数字だけ、または「No.87」「no87」「No 87」の形なら、bookNo の完全一致でも探す（見出し語・意味の部分一致も残す）。
 //   - 習得状況の絞り込みに「例文なし（まとめの語）」（status: 'nosentence'）を足す。
 //   - 詳細：例文にない語は、代表の例文の代わりに「まとめ」と関連例文（太字なし）を出す。音声は関連例文。
+// - 聞き流しへのつなぎ（2026-11-14 追加）：ctx.openMyListen があるときだけ、詳細に「▶ ここから聞き流し」を出す。
+//   押したら、この画面の後片付け（音・監視・キー操作）をしてから onExit の代わりに ctx.openMyListen(wordId) を呼ぶ。
 
 import { stageOf, bookNoOf, isNoSentenceWord, relatedSentenceId, stageSentenceId } from '../srs.js';
 import { loadProgress } from '../store.js';
@@ -376,7 +378,7 @@ function boldSentence(sentence, word) {
 // ---------- 画面本体 ----------
 
 export async function startWordList(root, ctx) {
-  const { words = [], sentencesById, getAudioBlob, onExit } = ctx || {};
+  const { words = [], sentencesById, getAudioBlob, onExit, openMyListen } = ctx || {};
   const audio = await import('../audio.js');
 
   const getSentence = (id) => {
@@ -413,13 +415,31 @@ export async function startWordList(root, ctx) {
     noticeEl.hidden = false;
   }
 
-  function quit() {
+  /** この画面の後片付け（音・検索の待ち・監視・キー操作） */
+  function cleanup() {
     audio.stop();
     cancelSpeech();
     search.cancel();
     if (observer) observer.disconnect();
     document.removeEventListener('keydown', onKey);
+  }
+
+  function quit() {
+    cleanup();
     if (typeof onExit === 'function') onExit();
+  }
+
+  /** 聞き流しを、この語から開く（ctx.openMyListen があるときだけ） */
+  function myListenButton(word) {
+    if (typeof openMyListen !== 'function') return null;
+    return el('button', {
+      type: 'button', class: 'btn btn-primary wl-mylisten',
+      onclick: () => {
+        closeDetail({ restoreFocus: false });
+        cleanup();
+        openMyListen(word.id);
+      },
+    }, '▶ ここから聞き流し');
   }
 
   // ---- 絞り込みの部品 ----
@@ -642,7 +662,7 @@ export async function startWordList(root, ctx) {
         recordBox(recOf(word.id)),
         otherSentencesBox(word),
       ),
-      el('div', { class: 'wl-sheet-foot' }, closeBtn),
+      el('div', { class: 'wl-sheet-foot' }, myListenButton(word), closeBtn),
     );
     sheet = el('div', { class: 'wl-backdrop' }, panel);
     sheet.addEventListener('click', (ev) => { if (ev.target === sheet) closeDetail(); });

@@ -81,6 +81,22 @@ export async function playSequence(ranges, gapSec = 0.4) {
   }
 }
 
+/**
+ * 再生の速さを変える（聞き流しで使う。1 = 普通）。
+ * 音声を入れ替える（load）と playbackRate は defaultPlaybackRate に戻るので、両方に入れる。
+ * 区間の秒数（start / end）は音声の中の位置なので、速さを変えてもそのままでよい。
+ */
+export function setRate(rate) {
+  const r = Number(rate);
+  const v = Number.isFinite(r) && r > 0 ? r : 1;
+  try {
+    audio.defaultPlaybackRate = v;
+    audio.playbackRate = v;
+  } catch {
+    // 対応していない環境では普通の速さのまま
+  }
+}
+
 /** 止める */
 export function stop() {
   if (stopTimer) cancelAnimationFrame(stopTimer);
