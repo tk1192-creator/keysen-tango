@@ -94,7 +94,7 @@ async function putMany(store, items, keyOf = null) {
 /** pack.json の検査。問題があれば PackError を投げる */
 export function validatePackInfo(info) {
   if (!info || info.format !== PACK_FORMAT) {
-    throw new PackError('このファイルは「キーセン単語」のデータパックではありません。');
+    throw new PackError('このファイルは「英単語マスター」のデータパックではありません。');
   }
   if (!SUPPORTED_VERSIONS.includes(info.version)) {
     throw new PackError(`データパックの版（${info.version}）にこのアプリは対応していません。アプリを最新にしてください。`);
@@ -243,7 +243,7 @@ export async function importPack(file, onProgress = () => {}) {
       }
     }
 
-    if (!info) throw new PackError('このファイルには pack.json がありません。「キーセン単語」のデータパックを選んでください。');
+    if (!info) throw new PackError('このファイルには pack.json がありません。「英単語マスター」のデータパックを選んでください。');
     if (!Array.isArray(sentences) || !Array.isArray(words)) {
       throw new PackError('データパックに例文または単語のデータがありません。PC で作り直してください。', 'broken');
     }

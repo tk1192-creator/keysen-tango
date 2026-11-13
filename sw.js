@@ -1,4 +1,4 @@
-// キーセン単語の Service Worker
+// 英単語マスターの Service Worker
 //
 // 役割：アプリ本体（HTML / CSS / JS / アイコン / manifest）をキャッシュし、電波がなくても起動できるようにする。
 //
@@ -26,7 +26,7 @@
 //   3) node --test tests/pwa.test.mjs で、一覧のファイルが実在するか、js の入れ忘れがないかを確かめる。
 
 const CACHE_PREFIX = 'kk-app-';
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
 // 電波が弱いとき、ネットワークの返事を待つ最大の時間（ミリ秒）。過ぎたらキャッシュで表示する。

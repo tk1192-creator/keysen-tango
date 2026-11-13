@@ -4,7 +4,7 @@
 使い方:
     python tools/build_pack.py --sentences data/private/sentences.json ^
         --words data/private/words.json --audio-dir data/private/audio ^
-        --out data/private/syswords-pack.zip --title "キーセン単語"
+        --out data/private/syswords-pack.zip --title "英単語マスター"
 
     --title は任意（アプリに表示する名前）。省略すると空文字になる。
 

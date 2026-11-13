@@ -48,8 +48,8 @@ function loadSw() {
 
 test('manifest.webmanifest：JSON として正しく、必要な項目がある', () => {
   const m = JSON.parse(readFileSync(rel('manifest.webmanifest'), 'utf8'));
-  assert.equal(m.name, 'キーセン単語');
-  assert.equal(m.short_name, 'キーセン単語');
+  assert.equal(m.name, '英単語マスター');
+  assert.equal(m.short_name, '英単語マスター');
   // GitHub Pages のサブパスで動くよう、相対で書く
   assert.equal(m.start_url, './');
   assert.equal(m.scope, './');
