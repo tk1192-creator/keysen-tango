@@ -12,9 +12,21 @@ import { startWordList } from './modes/wordlist.js';
 import { startMyListen, formatResumeLabel } from './modes/mylisten.js';
 import { numberWords, loadMyListen } from './player.js';
 import { APP_VERSION_LABEL } from './version.js';
+import { getVoices, listVoices, loadVoicePref, saveVoicePref, voiceFor, voiceLabel } from './voices.js';
 
 // アプリの版を表示する（ホームの下と設定画面）
 for (const el of document.querySelectorAll('.app-version')) el.textContent = APP_VERSION_LABEL;
+
+// 赤字で目立たせる文字（'en' 英単語 / 'ja' 日本語の意味 / 'none'）。body の data-emphasis で CSS を切り替える
+const DISPLAY_KEY = 'kk.display.v1';
+function loadEmphasis() {
+  try {
+    const v = JSON.parse(localStorage.getItem(DISPLAY_KEY) || '{}').emphasis;
+    return ['en', 'ja', 'none'].includes(v) ? v : 'en';
+  } catch { return 'en'; }
+}
+function applyEmphasis(v) { document.body.dataset.emphasis = v; }
+applyEmphasis(loadEmphasis());
 
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['loading', 'setup', 'home', 'study', 'listening', 'mode', 'settings'];
@@ -298,6 +310,40 @@ function onModeExit() {
   });
 }
 
+// ---------- 設定：読み上げの声 ----------
+const VOICE_SAMPLE = { ja: 'こんにちは。今日もいっしょに英単語を覚えましょう。', en: 'Hello. Let\'s learn some new words today.' };
+
+function renderVoiceSelect(key, lang) {
+  const sel = $(`set-voice-${key}`);
+  const pref = loadVoicePref()[key];
+  const list = listVoices(getVoices(), lang);
+  const auto = voiceFor(lang);
+  const opts = [new Option(`おすすめ（自動）${auto ? '：' + voiceLabel(auto) : ''}`, '')];
+  for (const v of list) opts.push(new Option(voiceLabel(v), v.voiceURI));
+  if (!list.length) opts[0].text = 'この端末には、この言語の声が見つかりません';
+  sel.replaceChildren(...opts);
+  sel.value = pref && list.some((v) => v.voiceURI === pref) ? pref : '';
+}
+
+function renderVoiceSettings() {
+  if (!('speechSynthesis' in window)) {
+    for (const k of ['ja', 'en']) { $(`set-voice-${k}`).disabled = true; $(`btn-voice-${k}-test`).disabled = true; }
+    return;
+  }
+  renderVoiceSelect('ja', 'ja-JP');
+  renderVoiceSelect('en', 'en-US');
+}
+
+function testVoice(key, lang) {
+  if (!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(VOICE_SAMPLE[key]);
+  u.lang = lang;
+  const v = voiceFor(lang);
+  if (v) u.voice = v;
+  speechSynthesis.speak(u);
+}
+
 // ---------- 設定 ----------
 function fillSelect(sel, values, current, unit) {
   const list = values.includes(current) ? values : [...values, current].sort((a, b) => a - b);
@@ -328,6 +374,8 @@ function onStudySettingChange(key, sel) {
 async function openSettings() {
   const info = await getPackInfo();
   renderStudySettings();
+  renderVoiceSettings();
+  $('set-emphasis').value = loadEmphasis();
   $('set-title').textContent = info ? (info.title || '-') : '-';
   $('set-counts').textContent = info ? `例文 ${info.counts.sentences}・単語 ${info.counts.words}・音声 ${info.counts.audio}` : '-';
   $('set-created').textContent = info ? fmtDate(info.created) : '-';
@@ -359,6 +407,24 @@ async function start() {
   $('btn-mylisten-resume').addEventListener('click', () => startMyListenWith({ autoResume: true }));
   $('set-new-per-day').addEventListener('change', (ev) => onStudySettingChange('newPerDay', ev.target));
   $('set-daily-goal').addEventListener('change', (ev) => onStudySettingChange('dailyGoal', ev.target));
+  $('set-emphasis').addEventListener('change', (ev) => {
+    const v = ev.target.value;
+    applyEmphasis(v);
+    try { localStorage.setItem(DISPLAY_KEY, JSON.stringify({ emphasis: v })); } catch { /* 保存できない環境では今回だけ */ }
+  });
+  for (const [key, lang] of [['ja', 'ja-JP'], ['en', 'en-US']]) {
+    $(`set-voice-${key}`).addEventListener('change', (ev) => {
+      saveVoicePref({ [key]: ev.target.value || null });
+      renderVoiceSelect(key, lang);
+    });
+    $(`btn-voice-${key}-test`).addEventListener('click', () => testVoice(key, lang));
+  }
+  // 声の一覧は遅れて届く端末があるので、届いたら設定画面を描き直す
+  if ('speechSynthesis' in window) {
+    try {
+      speechSynthesis.addEventListener('voiceschanged', () => { if (currentScreen() === 'settings') renderVoiceSettings(); });
+    } catch { /* 古い環境 */ }
+  }
   // 日をまたいで開き直したときに、ホームの数字を今日の分に直す
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && currentScreen() === 'home' && data) {

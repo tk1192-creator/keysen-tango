@@ -287,3 +287,12 @@ code { font-size: 0.9em; overflow-wrap: anywhere; }
 .listen-number { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .listen-status { margin: 0 !important; font-size: 16px; color: var(--muted); }
 .btn-toggle[aria-pressed="true"] { border-color: var(--primary); }
+
+/* ---------- 赤字で目立たせる文字（設定：body[data-emphasis]） ---------- */
+:root { --emph: #d32f2f; }
+@media (prefers-color-scheme: dark) { :root { --emph: #ff7b7b; } }
+body[data-emphasis="en"] .ml-en,
+body[data-emphasis="en"] .headword,
+body[data-emphasis="en"] .sentence-en strong { color: var(--emph); }
+body[data-emphasis="ja"] .ml-ja,
+body[data-emphasis="ja"] .meaning { color: var(--emph); }

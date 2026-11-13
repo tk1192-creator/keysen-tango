@@ -38,6 +38,7 @@
 
 import { findForm } from '../quiz.js';
 import { openListSheet, sectionOfNo } from './mylisten-list.js';
+import { pickVoice as pickVoiceShared, loadVoicePref, prefKeyOf } from '../voices.js';
 
 export const RATE_CHOICES = Object.freeze([0.75, 1, 1.25, 1.5]);
 export const GAP_CHOICES = Object.freeze([0, 0.5, 1, 1.5, 2, 3, 5]);
@@ -64,16 +65,10 @@ export function speakTimeoutMs(text, rate = 1) {
 }
 
 /** lang に合う声を選ぶ（完全一致 → 言語だけ一致。'_' と '-' の違いは無視）。無ければ null */
-export function pickVoice(voices, lang) {
-  const list = Array.isArray(voices) ? voices.filter(Boolean) : [];
-  const norm = (s) => String(s || '').replace(/_/g, '-').toLowerCase();
-  const want = norm(lang);
-  if (!want) return null;
-  const base = want.split('-')[0];
-  const exact = list.filter((v) => norm(v.lang) === want);
-  const pickLocal = (arr) => arr.find((v) => v.localService) || arr[0] || null;
-  if (exact.length) return pickLocal(exact);
-  return pickLocal(list.filter((v) => norm(v.lang).split('-')[0] === base));
+export function pickVoice(voices, lang, preferredURI = null) {
+  // 品質の高い声・設定で選んだ声を優先する（js/voices.js）
+  if (!lang) return null;
+  return pickVoiceShared(voices, lang, preferredURI);
 }
 
 /**
@@ -322,7 +317,7 @@ export async function startMyListen(root, ctx, opts = {}) {
         const entry = makePending(resolve);
         const u = new SpeechSynthesisUtterance(t);
         u.lang = lang || 'en-US';
-        const v = pickVoice(voices(), u.lang);
+        const v = pickVoice(voices(), u.lang, loadVoicePref()[prefKeyOf(u.lang)]);
         if (v) u.voice = v;
         const r = Number(rate) > 0 ? Number(rate) : 1;
         u.rate = Math.min(2, Math.max(0.5, r));

@@ -144,6 +144,25 @@
         <label class="field-label" for="set-daily-goal">今日の目標（問題数）</label>
         <select id="set-daily-goal" class="select"></select>
         <p id="set-study-message" class="muted small" aria-live="polite"></p>
+        <label class="field-label" for="set-emphasis">赤字で目立たせる文字</label>
+        <select id="set-emphasis" class="select">
+          <option value="en">英単語を赤字にする</option>
+          <option value="ja">日本語の意味を赤字にする</option>
+          <option value="none">赤字にしない</option>
+        </select>
+      </div>
+      <div class="card">
+        <h3>読み上げの声</h3>
+        <p class="muted small">単語や意味の読み上げに使う声です。「おすすめ」は、端末にある声のうち品質の高いものを自動で選びます。</p>
+        <label class="field-label" for="set-voice-ja">日本語の声</label>
+        <select id="set-voice-ja" class="select"></select>
+        <button id="btn-voice-ja-test" class="btn" type="button">▶ 日本語の声を試す</button>
+        <label class="field-label" for="set-voice-en">英語の声</label>
+        <select id="set-voice-en" class="select"></select>
+        <button id="btn-voice-en-test" class="btn" type="button">▶ 英語の声を試す</button>
+        <p class="muted small">声が機械っぽいときは、高品質な声をダウンロードすると自然になります。<br>
+          iPhone：設定 → アクセシビリティ → 読み上げコンテンツ → 声 → 日本語（または英語）→「拡張」や「プレミアム」の声をダウンロード。<br>
+          ダウンロードしたら、このアプリを開き直して、上で選んでください。</p>
       </div>
       <div class="card">
         <h3>データパック</h3>

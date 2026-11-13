@@ -27,7 +27,7 @@
 //   3) node --test tests/pwa.test.mjs で、一覧のファイルが実在するか、js の入れ忘れがないかを確かめる。
 
 const CACHE_PREFIX = 'kk-app-';
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
 // 電波が弱いとき、ネットワークの返事を待つ最大の時間（ミリ秒）。過ぎたらキャッシュで表示する。
@@ -41,6 +41,7 @@ const APP_FILES = [
   './css/style.css',
   './js/main.js',
   './js/version.js',
+  './js/voices.js',
   './js/pwa.js',
   './js/db.js',
   './js/store.js',

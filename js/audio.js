@@ -1,3 +1,5 @@
+import { voiceFor } from './voices.js';
+
 // 区間再生（mp3 は分割せず、開始秒から再生して終了秒で止める）
 //
 // iPhone Safari の注意：
@@ -105,12 +107,14 @@ export function stop() {
   if (!audio.paused) audio.pause();
 }
 
-/** 単語単体の発音（Web Speech API、en-US） */
+/** 単語単体の発音（Web Speech API、en-US。声は voices.js で品質の高いものを選ぶ） */
 export function speakWord(text) {
   if (!('speechSynthesis' in window)) return false;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US';
+  const v = voiceFor('en-US');
+  if (v) u.voice = v;
   u.rate = 0.9;
   speechSynthesis.speak(u);
   return true;
