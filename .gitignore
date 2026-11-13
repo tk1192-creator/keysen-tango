@@ -1,0 +1,29 @@
+# 教材データ（著作物）。絶対にコミットしない
+data/private/
+
+# 念のための二重の除外（data/private の外に置いてしまった場合の保険）
+*.mp3
+syswords-pack*.zip
+sentences.json
+words.json
+words.csv
+review.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# エディタ・OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Claude Code の個人設定
+.claude/settings.local.json

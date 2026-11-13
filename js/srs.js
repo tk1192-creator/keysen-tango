@@ -1,0 +1,340 @@
+// srs.js — 復習スケジュール（ライトナー方式、箱0〜5）
+//
+// 純粋な関数だけを置く（DOM・localStorage・ネットワークには触らない）。
+// 入力の words / progress / rec は書き換えず、常に新しいオブジェクト・配列を返す。
+// 仕様の元：CLAUDE.md 7章（学習設計）、js/API.md「js/srs.js」。
+//
+// ■ 日付の扱い
+//   - 日付は端末のローカル日付の文字列 "YYYY-MM-DD"。
+//   - 計算は new Date(年, 月-1, 日, 12時) のように年月日の数値で組み立て、正午を基準にする。
+//     UTC 解釈（new Date("YYYY-MM-DD") は UTC 0時になる）や夏時間の 23/25 時間の日でずれないようにするため。
+//   - 月末・年末・うるう年の繰り上がりは Date の日付あふれ処理に任せる（2028-02-28 + 1 = 2028-02-29）。
+//
+// ■ 取り決め（API.md）に書かれていなかった点の決め方
+//   1. addDays：形式が "YYYY-MM-DD" でない、または存在しない日付（2026-02-30 など）は RangeError を投げる。
+//      n は整数のみ（小数・NaN は RangeError）。負の数は過去の日付になる。
+//   2. todayStr：無効な Date を渡されたら RangeError を投げる。
+//   3. applyAnswer：
+//      - 正解なら correct + 1（取り決めでは明記なし。記録の correct は正解回数とみなした）。
+//      - correct は真偽値として扱う（!!correct）。
+//      - 記録の box が範囲外・数値でないときは 0〜5 に丸める（NaN・負 → 0、5 超 → 5、小数は切り捨て）。
+//      - 記録に first が無い（6章の古い形の記録）ときは、分かっている最も古い日として last を使い、
+//        last も無ければ dateStr を入れる。
+//      - 記録にある未知の項目（将来の拡張など）はそのまま引き継ぐ。
+//      - すでに mastered の語にもう一度正解した場合も、答える前が box 5 なので mastered = true のまま。
+//        due はほかと同じ規則（box 5 → 30 日後）で更新する。
+//   4. questionType：box が 1 以下（負・NaN を含む）は choice、2〜3 は cloze、4 以上は spell。
+//   5. isDue：記録に due が無い（壊れた記録）ときは「期限が来ている」とみなし true（復習で拾い直すため）。
+//   6. buildDailyMenu：
+//      - 対象は words に含まれる語だけ（progress にだけある id は無視する）。同じ id が重複していたら 1 回だけ数える。
+//      - reviews の並び：due が古い順 → box が小さい順 → id 順（最後の id 順は結果を毎回同じにするため）。
+//      - news：sentenceIds が無い語は例文番号を最大とみなして最後に回す。
+//      - オプションの既定値：date = todayStr()、newPerDay = 10（CLAUDE.md 7章の初期値）、newDoneToday = 0。
+//        件数は max(0, floor(newPerDay - newDoneToday))。
+//      - id の比較は文字列の大小（"w0001" のようなゼロ埋めの id を想定）。
+//   7. stageOf：1 以上の整数でない sentenceId は 0（ステージなし）を返す（画面を止めないため例外は投げない）。
+//   8. stageSummary：
+//      - 語のステージは代表の例文（sentenceIds[0]）で決める。代表の例文が無効な語は数えない。
+//      - ステージ 1 から「代表の例文番号の最大値が属するステージ」まで、途中に語が無いステージも
+//        total 0 で含めて連番で返す。
+//      - from = (stage-1)*50+1。to = stage*50 だが、語の sentenceIds（2 つ目以降も含む）に出てくる
+//        最大の例文番号で頭打ちにする（562 文なら最後のステージは 551〜562）。
+//      - mastered は rec.mastered === true の語の数。total 0 のステージの rate は 0。
+
+/** 箱0〜5 の次回までの日数（書き換えられないよう凍結） */
+export const INTERVALS = Object.freeze([0, 1, 3, 7, 14, 30]);
+
+/** 箱の最大値 */
+const MAX_BOX = INTERVALS.length - 1;
+
+/** 1 ステージあたりの例文数 */
+const STAGE_SIZE = 50;
+
+/** 1 日の新規語数の既定値（CLAUDE.md 7章） */
+const DEFAULT_NEW_PER_DAY = 10;
+
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+// ---------------------------------------------------------------------------
+// 内部の小道具
+// ---------------------------------------------------------------------------
+
+/** 数値を 2 桁・4 桁のゼロ埋め文字列にする */
+function pad(n, width) {
+  return String(n).padStart(width, '0');
+}
+
+/** Date をローカル日付の "YYYY-MM-DD" にする */
+function formatLocal(date) {
+  return `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1, 2)}-${pad(date.getDate(), 2)}`;
+}
+
+/**
+ * "YYYY-MM-DD" を検査して年月日の数値に分ける。
+ * 形式が違う・存在しない日付なら RangeError。
+ */
+function parseDateStr(dateStr) {
+  const m = typeof dateStr === 'string' ? DATE_RE.exec(dateStr) : null;
+  if (!m) {
+    throw new RangeError(`日付の形式が正しくありません（"YYYY-MM-DD" が必要）：${String(dateStr)}`);
+  }
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  // 正午で組み立てて、往復で同じ日付になるかを確かめる（2026-02-30 などを弾く）
+  const dt = new Date(y, mo - 1, d, 12, 0, 0, 0);
+  dt.setFullYear(y); // 0〜99 年が 1900 年代に読み替えられるのを防ぐ
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) {
+    throw new RangeError(`存在しない日付です：${dateStr}`);
+  }
+  return { y, mo, d };
+}
+
+/** box を 0〜5 の整数に丸める */
+function normalizeBox(box) {
+  const n = Math.trunc(Number(box));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, MAX_BOX);
+}
+
+/** 0 以上の整数でなければ 0 にする（回数の項目用） */
+function count(n) {
+  const v = Math.trunc(Number(n));
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/** 文字列の大小で比べる（ゼロ埋めの id 用） */
+function compareStr(a, b) {
+  const sa = String(a);
+  const sb = String(b);
+  if (sa < sb) return -1;
+  if (sa > sb) return 1;
+  return 0;
+}
+
+/** 有効な例文番号（1 以上の整数）か */
+function isValidSentenceId(id) {
+  return Number.isInteger(id) && id >= 1;
+}
+
+/** 語の代表の例文番号。無ければ null */
+function representativeSentenceId(word) {
+  const ids = word && Array.isArray(word.sentenceIds) ? word.sentenceIds : [];
+  return isValidSentenceId(ids[0]) ? ids[0] : null;
+}
+
+/** progress から語の記録を取る（自身のプロパティだけを見る） */
+function recordOf(progress, id) {
+  if (!progress || !Object.prototype.hasOwnProperty.call(progress, id)) return undefined;
+  const rec = progress[id];
+  return rec == null ? undefined : rec;
+}
+
+// ---------------------------------------------------------------------------
+// 公開する関数
+// ---------------------------------------------------------------------------
+
+/**
+ * ローカル日付の "YYYY-MM-DD" を返す。
+ * @param {Date} [date=new Date()]
+ * @returns {string}
+ */
+export function todayStr(date = new Date()) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    throw new RangeError('todayStr には有効な Date を渡してください');
+  }
+  return formatLocal(date);
+}
+
+/**
+ * 日付に n 日を足す（n が負なら引く）。
+ * @param {string} dateStr "YYYY-MM-DD"
+ * @param {number} n 整数
+ * @returns {string} "YYYY-MM-DD"
+ */
+export function addDays(dateStr, n) {
+  const { y, mo, d } = parseDateStr(dateStr);
+  if (!Number.isInteger(n)) {
+    throw new RangeError(`addDays の日数は整数で指定してください：${String(n)}`);
+  }
+  // 正午基準で日付あふれ（月末・年末・うるう年）を Date に任せる。夏時間でも日がずれない
+  const dt = new Date(y, mo - 1, d + n, 12, 0, 0, 0);
+  return formatLocal(dt);
+}
+
+/**
+ * 1 回の回答を記録に反映した新しい記録を返す（rec は書き換えない）。
+ * @param {object|undefined} rec { box, due, correct, wrong, last, first, mastered }
+ * @param {boolean} correct 正解なら true
+ * @param {string} dateStr 回答した日 "YYYY-MM-DD"
+ * @returns {{box:number, due:string, correct:number, wrong:number, last:string, first:string, mastered:boolean}}
+ */
+export function applyAnswer(rec, correct, dateStr) {
+  parseDateStr(dateStr); // 先に日付を検査する
+  const isCorrect = !!correct;
+  const prev = rec && typeof rec === 'object' ? rec : undefined;
+
+  const prevBox = prev ? normalizeBox(prev.box) : 0;
+  const prevCorrect = prev ? count(prev.correct) : 0;
+  const prevWrong = prev ? count(prev.wrong) : 0;
+  const first = prev ? (prev.first ?? prev.last ?? dateStr) : dateStr;
+
+  let box;
+  let mastered;
+  if (isCorrect) {
+    // 答える前が箱5で正解ならマスター（箱は5のまま）
+    mastered = prevBox === MAX_BOX ? true : !!(prev && prev.mastered);
+    box = Math.min(prevBox + 1, MAX_BOX);
+  } else {
+    box = 0;
+    mastered = false;
+  }
+
+  return {
+    ...(prev || {}), // 未知の項目は引き継ぐ
+    box,
+    due: addDays(dateStr, INTERVALS[box]),
+    correct: prevCorrect + (isCorrect ? 1 : 0),
+    wrong: prevWrong + (isCorrect ? 0 : 1),
+    last: dateStr,
+    first,
+    mastered,
+  };
+}
+
+/**
+ * 箱に応じた出題形式。
+ * @param {number} box
+ * @returns {'choice'|'cloze'|'spell'} 箱0〜1：choice、2〜3：cloze、4〜5：spell
+ */
+export function questionType(box) {
+  const b = normalizeBox(box);
+  if (b <= 1) return 'choice';
+  if (b <= 3) return 'cloze';
+  return 'spell';
+}
+
+/**
+ * 復習の期限が来ているか。
+ * @param {object|undefined} rec
+ * @param {string} dateStr
+ * @returns {boolean} rec があり、mastered でなく、due <= dateStr
+ */
+export function isDue(rec, dateStr) {
+  if (!rec || typeof rec !== 'object') return false;
+  if (rec.mastered === true) return false;
+  if (typeof rec.due !== 'string' || !DATE_RE.test(rec.due)) return true; // 壊れた記録は拾い直す
+  return rec.due <= dateStr; // ゼロ埋めの "YYYY-MM-DD" は文字列比較で日付順になる
+}
+
+/**
+ * 1 日のメニュー（復習と新規）を作る。
+ * @param {Array<object>} words
+ * @param {object} progress { [wordId]: rec }
+ * @param {{date?:string, newPerDay?:number, newDoneToday?:number}} [opts]
+ * @returns {{reviews:string[], news:string[]}}
+ */
+export function buildDailyMenu(words, progress, options) {
+  const opts = options || {};
+  const date = opts.date ?? todayStr();
+  parseDateStr(date);
+  const newPerDay = Number.isFinite(Number(opts.newPerDay)) && opts.newPerDay !== null
+    ? Number(opts.newPerDay)
+    : DEFAULT_NEW_PER_DAY;
+  const newDoneToday = Number.isFinite(Number(opts.newDoneToday)) ? Number(opts.newDoneToday) : 0;
+  const newLimit = Math.max(0, Math.floor(newPerDay - newDoneToday));
+
+  const list = Array.isArray(words) ? words : [];
+  const seen = new Set();
+  const dueItems = [];
+  const newItems = [];
+
+  for (const w of list) {
+    if (!w || w.id == null || seen.has(w.id)) continue;
+    seen.add(w.id);
+    const rec = recordOf(progress, w.id);
+    if (rec === undefined) {
+      const sid = representativeSentenceId(w);
+      newItems.push({ id: w.id, sid: sid ?? Infinity });
+    } else if (isDue(rec, date)) {
+      dueItems.push({
+        id: w.id,
+        due: typeof rec.due === 'string' ? rec.due : '', // due 無しは最も古い扱い
+        box: normalizeBox(rec.box),
+      });
+    }
+  }
+
+  dueItems.sort((a, b) => compareStr(a.due, b.due) || a.box - b.box || compareStr(a.id, b.id));
+  newItems.sort((a, b) => (a.sid === b.sid ? 0 : a.sid < b.sid ? -1 : 1) || compareStr(a.id, b.id));
+
+  return {
+    reviews: dueItems.map((x) => x.id),
+    news: newItems.slice(0, newLimit).map((x) => x.id),
+  };
+}
+
+/**
+ * 例文番号のステージ（50 文ごと）。1〜50 → 1、51〜100 → 2 …
+ * @param {number} sentenceId
+ * @returns {number} 無効な番号なら 0
+ */
+export function stageOf(sentenceId) {
+  if (!isValidSentenceId(sentenceId)) return 0;
+  return Math.ceil(sentenceId / STAGE_SIZE);
+}
+
+/**
+ * ステージごとの達成状況。
+ * @param {Array<object>} words
+ * @param {object} progress
+ * @returns {Array<{stage:number, from:number, to:number, total:number, learned:number, mastered:number, rate:number}>}
+ */
+export function stageSummary(words, progress) {
+  const list = Array.isArray(words) ? words : [];
+  const seen = new Set();
+  let maxRepId = 0;
+  let maxAnyId = 0;
+  const items = [];
+
+  for (const w of list) {
+    if (!w || w.id == null || seen.has(w.id)) continue;
+    seen.add(w.id);
+    if (Array.isArray(w.sentenceIds)) {
+      for (const sid of w.sentenceIds) {
+        if (isValidSentenceId(sid) && sid > maxAnyId) maxAnyId = sid;
+      }
+    }
+    const rep = representativeSentenceId(w);
+    if (rep === null) continue;
+    if (rep > maxRepId) maxRepId = rep;
+    items.push({ stage: stageOf(rep), rec: recordOf(progress, w.id) });
+  }
+
+  const stageCount = stageOf(maxRepId); // 語が無ければ 0
+  const result = [];
+  for (let s = 1; s <= stageCount; s++) {
+    result.push({
+      stage: s,
+      from: (s - 1) * STAGE_SIZE + 1,
+      to: Math.min(s * STAGE_SIZE, maxAnyId),
+      total: 0,
+      learned: 0,
+      mastered: 0,
+      rate: 0,
+    });
+  }
+
+  for (const { stage, rec } of items) {
+    const row = result[stage - 1];
+    row.total += 1;
+    const isMastered = !!rec && rec.mastered === true;
+    if (isMastered) row.mastered += 1;
+    if (isMastered || (!!rec && normalizeBox(rec.box) >= 3)) row.learned += 1;
+  }
+
+  for (const row of result) {
+    row.rate = row.total > 0 ? row.learned / row.total : 0;
+  }
+  return result;
+}

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f5d8a">
+  <title>キーセン単語</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <script type="module" src="js/pwa.js"></script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="app-title">キーセン単語</h1>
+    <button id="btn-settings" class="icon-btn" type="button" aria-label="設定" hidden>設定</button>
+  </header>
+
+  <main id="app">
+    <!-- 起動中 -->
+    <section id="screen-loading" class="screen">
+      <p class="muted">読み込んでいます…</p>
+    </section>
+
+    <!-- はじめに（データパックの取り込み） -->
+    <section id="screen-setup" class="screen" hidden>
+      <h2>はじめに</h2>
+      <div class="card">
+        <p>このアプリを使うには、<strong>データパック</strong>（例文と音声をまとめた zip ファイル）を取り込みます。</p>
+        <p class="muted">保護者の方が PC で作ったデータパック（<code>syswords-pack.zip</code>）を、この端末に保存してから選んでください。取り込みは最初の 1 回だけです。</p>
+      </div>
+      <label class="btn btn-primary file-btn">
+        データパックを選ぶ
+        <input id="pack-file" type="file" accept=".zip,application/zip">
+      </label>
+      <div id="import-progress" class="progress-box" hidden>
+        <div class="progress"><div id="import-bar" class="progress-bar"></div></div>
+        <p id="import-message" class="muted" aria-live="polite"></p>
+      </div>
+      <p id="import-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <!-- ホーム -->
+    <section id="screen-home" class="screen" hidden>
+      <p id="home-storage-warning" class="error" role="alert" hidden>この画面では学習の記録が保存できません（プライベートブラウズなど）。通常の画面で開くと、記録が残ります。</p>
+      <p id="home-error" class="error" role="alert" hidden></p>
+
+      <div class="card today-card">
+        <h2 class="card-title">今日の学習</h2>
+        <div class="today-counts">
+          <div class="count-box">
+            <span class="count-label">復習</span>
+            <span class="count-value"><strong id="home-reviews" class="count-num">0</strong> 件</span>
+          </div>
+          <div class="count-box">
+            <span class="count-label">新規</span>
+            <span class="count-value"><strong id="home-news" class="count-num">0</strong> 件</span>
+          </div>
+        </div>
+        <p class="goal-line"><span>今日の目標</span><span id="home-goal-text">0 / 20 問</span></p>
+        <div id="home-goal-progress" class="progress" role="progressbar" aria-label="今日の目標までの進み具合" aria-valuemin="0" aria-valuemax="20" aria-valuenow="0">
+          <div id="home-goal-bar" class="progress-bar"></div>
+        </div>
+        <p class="streak-line">連続学習 <strong id="home-streak">0</strong> 日</p>
+        <button id="btn-start-today" class="btn btn-primary btn-start" type="button">今日の学習を始める</button>
+        <p id="home-done-message" class="muted small" hidden>今日の分は終わりました。また明日やりましょう。</p>
+      </div>
+
+      <div class="card other-modes">
+        <h3>ほかの学習</h3>
+        <div class="mode-list">
+          <button id="btn-start-listening" class="btn mode-btn" type="button">
+            <span class="mode-name">例文リスニング</span>
+            <span class="mode-desc muted">範囲を選んで、例文の音声を続けて聞く</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>ステージ別の達成率</h3>
+        <p class="muted small">例文 50 文ごとのまとまりです。何度か続けて正解した語（箱 3 以上）を「覚えた」と数えます。</p>
+        <ol id="home-stages" class="stage-list"></ol>
+      </div>
+
+      <div class="card">
+        <p>未確認の語：<strong id="home-unverified">0</strong> 語</p>
+        <p class="muted small">「未確認」の印は、まだ本と照合していない語です。意味があやしいときは、本で確かめてください。</p>
+      </div>
+
+      <p class="muted small pack-line"><span id="home-title"></span>（<span id="home-sentences">0</span> 文・<span id="home-words">0</span> 語）</p>
+    </section>
+
+    <!-- 今日の学習（js/modes/today.js が描画する） -->
+    <section id="screen-study" class="screen" hidden>
+      <div id="study-root"></div>
+    </section>
+
+    <!-- 例文リスニング（js/modes/listening.js が描画する） -->
+    <section id="screen-listening" class="screen" hidden>
+      <div id="listening-root"></div>
+    </section>
+
+    <!-- 設定 -->
+    <section id="screen-settings" class="screen" hidden>
+      <h2>設定</h2>
+      <div class="card">
+        <h3>学習</h3>
+        <label class="field-label" for="set-new-per-day">1 日の新しい語の数</label>
+        <select id="set-new-per-day" class="select"></select>
+        <label class="field-label" for="set-daily-goal">今日の目標（問題数）</label>
+        <select id="set-daily-goal" class="select"></select>
+        <p id="set-study-message" class="muted small" aria-live="polite"></p>
+      </div>
+      <div class="card">
+        <h3>データパック</h3>
+        <dl class="info">
+          <dt>名前</dt><dd id="set-title">-</dd>
+          <dt>件数</dt><dd id="set-counts">-</dd>
+          <dt>作成日時</dt><dd id="set-created">-</dd>
+          <dt>取り込んだ日時</dt><dd id="set-imported">-</dd>
+        </dl>
+        <button id="btn-reimport" class="btn" type="button">データパックを入れ直す</button>
+        <p class="muted small">入れ直しても、学習の記録は消えません。</p>
+      </div>
+      <button id="btn-back" class="btn" type="button">ホームに戻る</button>
+    </section>
+  </main>
+</body>
+</html>
