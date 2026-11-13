@@ -21,6 +21,7 @@
 //   1) 新しいファイル（例：js/modes/listening.js）を APP_FILES に足す。
 //      まだ作っていないが近く足す予定のファイルは PLANNED_FILES に書いてよい（無くてもインストールは失敗しない）。
 //   2) CACHE_VERSION の数字を 1 つ上げる（'kk-app-v1' → 'kk-app-v2'）。
+//      画面に出す版 js/version.js の APP_VERSION と日付も同じ値に直す（tests/pwa.test.mjs で確かめている）。
 //      これで新しい Service Worker が入り、画面に「新しい版があります」が出る（js/pwa.js の onUpdate）。
 //      activate のときに古い版のキャッシュ（kk-app- で始まる別の名前）は消える。
 //   3) node --test tests/pwa.test.mjs で、一覧のファイルが実在するか、js の入れ忘れがないかを確かめる。
@@ -39,6 +40,7 @@ const APP_FILES = [
   './manifest.webmanifest',
   './css/style.css',
   './js/main.js',
+  './js/version.js',
   './js/pwa.js',
   './js/db.js',
   './js/store.js',

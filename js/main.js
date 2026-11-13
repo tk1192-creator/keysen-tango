@@ -11,6 +11,10 @@ import { startWeak, countWeakWords } from './modes/weak.js';
 import { startWordList } from './modes/wordlist.js';
 import { startMyListen, formatResumeLabel } from './modes/mylisten.js';
 import { numberWords, loadMyListen } from './player.js';
+import { APP_VERSION_LABEL } from './version.js';
+
+// アプリの版を表示する（ホームの下と設定画面）
+for (const el of document.querySelectorAll('.app-version')) el.textContent = APP_VERSION_LABEL;
 
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['loading', 'setup', 'home', 'study', 'listening', 'mode', 'settings'];

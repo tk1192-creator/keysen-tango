@@ -46,6 +46,15 @@ function loadSw() {
   return { ...context.__sw, handlers };
 }
 
+test('アプリの版（js/version.js）が sw.js の CACHE_VERSION とそろっている', async () => {
+  const { APP_VERSION, APP_DATE } = await import(pathToFileURL(rel('js/version.js')).href);
+  const sw = readFileSync(rel('sw.js'), 'utf8');
+  const m = sw.match(/const CACHE_VERSION = '([^']+)'/);
+  assert.ok(m, 'sw.js に CACHE_VERSION がありません');
+  assert.equal(APP_VERSION, m[1], 'js/version.js の APP_VERSION を sw.js の CACHE_VERSION と同じにしてください');
+  assert.match(APP_DATE, /^\d{4}-\d{2}-\d{2}$/);
+});
+
 test('manifest.webmanifest：JSON として正しく、必要な項目がある', () => {
   const m = JSON.parse(readFileSync(rel('manifest.webmanifest'), 'utf8'));
   assert.equal(m.name, '英単語マスター');
