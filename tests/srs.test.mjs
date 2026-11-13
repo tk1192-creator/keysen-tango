@@ -18,6 +18,11 @@ import {
   buildDailyMenu,
   stageOf,
   stageSummary,
+  bookNoOf,
+  isNoSentenceWord,
+  relatedSentenceId,
+  stageSentenceId,
+  orderNewWords,
 } from '../js/srs.js';
 
 const SRS_URL = pathToFileURL(
@@ -556,5 +561,132 @@ describe('stageSummary', () => {
     const progress = deepFreeze({ w0001: rec(3, '2026-11-20') });
     const s = stageSummary(words, progress);
     assert.equal(s[0].learned, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 本の番号（bookNo）と例文にない語（ダミーデータ）
+// ---------------------------------------------------------------------------
+
+describe('bookNoOf / isNoSentenceWord / relatedSentenceId / stageSentenceId', () => {
+  test('bookNoOf：1 以上の整数だけ。数字だけの文字列も読む', () => {
+    assert.equal(bookNoOf(w('w0001', 1, { bookNo: 87 })), 87);
+    assert.equal(bookNoOf(w('w0001', 1, { bookNo: '87' })), 87);
+    assert.equal(bookNoOf(w('w0001', 1)), null);
+    assert.equal(bookNoOf(w('w0001', 1, { bookNo: 0 })), null);
+    assert.equal(bookNoOf(w('w0001', 1, { bookNo: 1.5 })), null);
+    assert.equal(bookNoOf(w('w0001', 1, { bookNo: 'No.87' })), null);
+    assert.equal(bookNoOf(null), null);
+  });
+
+  test('isNoSentenceWord：sentenceIds が空・無い語', () => {
+    assert.equal(isNoSentenceWord(w('w0001', null)), true);
+    assert.equal(isNoSentenceWord({ id: 'w0001' }), true);
+    assert.equal(isNoSentenceWord(w('w0001', 3)), false);
+  });
+
+  test('relatedSentenceId・stageSentenceId', () => {
+    const noSent = w('w0001', null, { relatedSentenceIds: [120, 5] });
+    assert.equal(relatedSentenceId(noSent), 120);
+    assert.equal(stageSentenceId(noSent), 120);
+    assert.equal(stageSentenceId(w('w0002', 7, { relatedSentenceIds: [300] })), 7); // 例文がある語は代表の例文
+    assert.equal(stageSentenceId(w('w0003', null)), null);
+    assert.equal(stageSentenceId(w('w0004', null, { relatedSentenceIds: [] })), null);
+    assert.equal(relatedSentenceId(w('w0005', null, { relatedSentenceIds: ['x', 0, 9] })), 9);
+  });
+});
+
+describe('orderNewWords / buildDailyMenu（本の番号順）', () => {
+  const DATE = '2026-11-13';
+
+  test('bookNo の無いデータでは今までどおり（例文番号順 → id 順、例文の無い語は最後）', () => {
+    const words = [w('w0003', 5), w('w0001', null), w('w0002', 5), w('w0004', 2)];
+    assert.deepEqual(orderNewWords(words), ['w0004', 'w0002', 'w0003', 'w0001']);
+  });
+
+  test('bookNo のある語は bookNo の小さい順（例文番号の順ではない）', () => {
+    const words = [
+      w('w0001', 1, { bookNo: 3 }),
+      w('w0002', 2, { bookNo: 1 }),
+      w('w0003', null, { bookNo: 2, relatedSentenceIds: [9] }), // 例文にない語も本の順
+    ];
+    assert.deepEqual(orderNewWords(words), ['w0002', 'w0003', 'w0001']);
+    const m = buildDailyMenu(words, {}, { date: DATE, newPerDay: 10, newDoneToday: 0 });
+    assert.deepEqual(m.news, ['w0002', 'w0003', 'w0001']);
+  });
+
+  test('混在：bookNo の無い語は、その例文の bookNo のある語のうち最小の bookNo の直後', () => {
+    const words = [
+      w('w0001', 10, { bookNo: 20 }),
+      w('w0002', 10, { bookNo: 15 }),
+      w('w0003', 10),                      // 例文 10 → 最小 15 の直後
+      w('w0004', 3, { bookNo: 16 }),
+      w('w0005', 3),                       // 例文 3 → 16 の直後
+      w('w0006', 10),                      // 例文 10 → 15 の直後（w0003 と同じ位置なので id 順）
+      w('w0007', 8),                       // 例文 8 に bookNo の語がいない → 例文 8 以前の最大の bookNo（30）の直後
+      w('w0008', null),                    // 例文も bookNo も無い → 最後
+      w('w0009', 4),                       // 例文 4 にもいない → 例文 4 以前の最大の bookNo（30）の直後
+      w('w0010', 1, { bookNo: 30, sentenceIds: [1, 12] }),
+      w('w0011', 12),                      // 例文 12 には w0010 が 2 つ目の例文として出てくる → 30 の直後
+    ];
+    // 30 の直後の語どうしは例文番号順（4 → 8 → 12）
+    assert.deepEqual(orderNewWords(words),
+      ['w0002', 'w0003', 'w0006', 'w0004', 'w0005', 'w0001', 'w0010', 'w0009', 'w0007', 'w0011', 'w0008']);
+  });
+
+  test('番号の入力が途中でも、番号のない語は例文の順を保つ', () => {
+    const words = [
+      w('w0001', 1), w('w0002', 2, { bookNo: 5 }), w('w0003', 3), w('w0004', 4), w('w0005', 5, { bookNo: 9 }), w('w0006', 6),
+    ];
+    // 番号のある語は 2 つだけでも、全体はおおむね例文の順のまま
+    assert.deepEqual(orderNewWords(words), ['w0001', 'w0002', 'w0003', 'w0004', 'w0005', 'w0006']);
+  });
+
+  test('よりどころの語が学習済みでも、その直後の位置に出す', () => {
+    const words = [
+      w('w0001', 1, { bookNo: 1 }),
+      w('w0002', 2, { bookNo: 2 }),
+      w('w0003', 2),                       // 2 の直後
+      w('w0004', 3, { bookNo: 3 }),
+    ];
+    const progress = { w0002: rec(1, '2026-11-20') };
+    const m = buildDailyMenu(words, progress, { date: DATE, newPerDay: 10, newDoneToday: 0 });
+    assert.deepEqual(m.news, ['w0001', 'w0003', 'w0004']);
+    const m2 = buildDailyMenu(words, progress, { date: DATE, newPerDay: 2, newDoneToday: 0 });
+    assert.deepEqual(m2.news, ['w0001', 'w0003']);
+  });
+
+  test('同じ bookNo は id 順。重複した id は 1 回だけ。入力を書き換えない', () => {
+    const words = deepFreeze([
+      w('w0002', 1, { bookNo: 5 }),
+      w('w0001', 2, { bookNo: 5 }),
+      w('w0002', 1, { bookNo: 5 }),
+    ]);
+    assert.deepEqual(orderNewWords(words), ['w0001', 'w0002']);
+    assert.deepEqual(orderNewWords(null), []);
+  });
+});
+
+describe('stageSummary（例文にない語）', () => {
+  test('sentenceIds が空の語は relatedSentenceIds[0] でステージを決める。どちらも無い語は数えない', () => {
+    const words = [
+      w('w0001', 1),
+      w('w0002', null, { relatedSentenceIds: [60, 2] }), // ステージ 2
+      w('w0003', null),                                  // 数えない
+      w('w0004', null, { relatedSentenceIds: [] }),       // 数えない
+    ];
+    const s = stageSummary(words, { w0002: rec(3, '2026-11-20') });
+    assert.equal(s.length, 2);
+    assert.equal(s[0].total, 1);
+    assert.equal(s[1].total, 1);
+    assert.equal(s[1].learned, 1);
+    assert.equal(s[1].to, 60);
+    assert.equal(s.reduce((a, r) => a + r.total, 0), 2);
+  });
+
+  test('例文がある語は relatedSentenceIds があっても代表の例文で決める', () => {
+    const s = stageSummary([w('w0001', 5, { relatedSentenceIds: [200] })], {});
+    assert.equal(s.length, 1);
+    assert.equal(s[0].total, 1);
   });
 });

@@ -90,6 +90,44 @@ class BuildPackTest(unittest.TestCase):
         self.assertIn("id 1 が重複", r.stdout)
         self.assertFalse(self.out.exists())
 
+    def write_words(self, words):
+        self.wp.write_text(json.dumps(words, ensure_ascii=False), encoding="utf-8")
+
+    def test_book_word_without_sentence_passes(self):
+        words = json.loads(self.wp.read_text(encoding="utf-8"))
+        words.append({"id": "w0100", "bookNo": 5, "word": "uncle", "pos": "名詞", "meaning": "おじ",
+                      "isPhrase": False, "group": "家族", "sentenceIds": [], "relatedSentenceIds": [1],
+                      "form": "", "source": "book", "verified": False})
+        self.write_words(words)
+        r = self.run_tool()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("sentenceIds が空", r.stdout)
+        # auto の語で空なら、今までどおり警告（作成は続ける）
+        words[-1]["source"] = "auto"
+        self.write_words(words)
+        r = self.run_tool()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("sentenceIds が空", r.stdout)
+
+    def test_book_no_duplicate_aborts(self):
+        words = json.loads(self.wp.read_text(encoding="utf-8"))
+        words[0]["bookNo"] = 3
+        words[1]["bookNo"] = 3
+        self.write_words(words)
+        r = self.run_tool()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("bookNo 3", r.stdout)
+        self.assertFalse(self.out.exists())
+
+    def test_bad_related_sentence_aborts(self):
+        words = json.loads(self.wp.read_text(encoding="utf-8"))
+        words[0]["relatedSentenceIds"] = [2, 99]
+        self.write_words(words)
+        r = self.run_tool()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("relatedSentenceIds の 99", r.stdout)
+        self.assertFalse(self.out.exists())
+
     def test_bom_input_is_readable(self):
         for p in (self.sp, self.wp):
             p.write_text(p.read_text(encoding="utf-8"), encoding="utf-8-sig")

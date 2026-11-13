@@ -24,8 +24,17 @@
 // - 音声：audio.js は node のテストで読めないので startWordList の中で動的 import する。
 //   詳細を開いた時点で prepare() し、「例文を聞く」では playSegment(seg.en1) だけを呼ぶ（iPhone 対策）。
 // - 「ほかの例文（参考）」は sentenceIds の 2 つ目以降（代表と同じ番号・重複は除く）。参考表示だけ（CLAUDE.md 6章）。
+// - 本の番号（bookNo）・例文にない語（2026-11-13 追加。項目が無い語は今までどおり）：
+//   - 行と詳細の見出し語の近くに小さく「No.87」。
+//   - ステージは srs.stageSentenceId で決める（例文にない語は relatedSentenceIds[0]）。どちらも無い語は「ステージなし」。
+//     ステージの絞り込みに「ステージなし」（stage: 'none'）を足す（その語があるときだけ選択肢に出す）。
+//   - 並べ替え（SORT_KEYS）：'sentence' 例文の順（今まで）／'book' 本の番号順（bookNo の無い語は最後、その中は例文の順）。
+//     選んだ並べ替えは localStorage 'kk.wordlist.v1' { version: 1, sort } に覚える（読み書きは try/catch）。
+//   - 検索：数字だけ、または「No.87」「no87」「No 87」の形なら、bookNo の完全一致でも探す（見出し語・意味の部分一致も残す）。
+//   - 習得状況の絞り込みに「例文なし（まとめの語）」（status: 'nosentence'）を足す。
+//   - 詳細：例文にない語は、代表の例文の代わりに「まとめ」と関連例文（太字なし）を出す。音声は関連例文。
 
-import { stageOf } from '../srs.js';
+import { stageOf, bookNoOf, isNoSentenceWord, relatedSentenceId, stageSentenceId } from '../srs.js';
 import { loadProgress } from '../store.js';
 import { findForm } from '../quiz.js';
 
@@ -46,8 +55,17 @@ export const STATUS_MARKS = Object.freeze({
   mastered: '◎',
 });
 
-/** 習得状況の絞り込みの選択肢（unverified は「未確認の語だけ」） */
-export const STATUS_FILTERS = Object.freeze(['all', 'new', 'learning', 'learned', 'mastered', 'unverified']);
+/** 習得状況の絞り込みの選択肢（unverified は「未確認の語だけ」、nosentence は「例文なし（まとめの語）」） */
+export const STATUS_FILTERS = Object.freeze(['all', 'new', 'learning', 'learned', 'mastered', 'unverified', 'nosentence']);
+
+/** 並べ替えの選択肢 */
+export const SORT_KEYS = Object.freeze({
+  sentence: '例文の順',
+  book: '本の番号順',
+});
+
+/** 並べ替えを覚える localStorage のキー */
+export const WORDLIST_KEY = 'kk.wordlist.v1';
 
 /** 品詞の絞り込みの選択肢 */
 export const POS_GROUPS = Object.freeze({
@@ -100,9 +118,9 @@ export function representativeId(word) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-/** 語のステージ（代表の例文で決める。無効なら 0） */
+/** 語のステージ（代表の例文。例文にない語は関連例文で決める。無ければ 0＝ステージなし） */
 export function wordStage(word) {
-  const id = representativeId(word);
+  const id = stageSentenceId(word);
   return id == null ? 0 : stageOf(id);
 }
 
@@ -129,13 +147,63 @@ export function listWordStages(words) {
   return out;
 }
 
-/** 代表の例文番号の小さい順、同じなら id 順に並べた新しい配列（代表の例文が無効な語は最後） */
-export function sortWords(words) {
+/**
+ * 並べた新しい配列を返す（元の配列は変えない）。
+ * sortKey 'sentence'（既定）：代表の例文番号の小さい順、同じなら id 順（代表の例文が無効な語は最後）
+ * sortKey 'book'：bookNo の小さい順（同じなら id 順）。bookNo の無い語は最後で、その中は 'sentence' と同じ順
+ */
+export function sortWords(words, sortKey = 'sentence') {
   const list = Array.isArray(words) ? words.filter(Boolean) : [];
+  const byBook = sortKey === 'book';
+  const cmpNum = (x, y) => (x === y ? 0 : x < y ? -1 : 1);
   return list
-    .map((w, i) => ({ w, i, rep: representativeId(w) ?? Infinity }))
-    .sort((a, b) => (a.rep - b.rep) || String(a.w.id ?? '').localeCompare(String(b.w.id ?? '')) || (a.i - b.i))
+    .map((w, i) => ({ w, i, rep: representativeId(w) ?? Infinity, book: byBook ? (bookNoOf(w) ?? Infinity) : 0 }))
+    .sort((a, b) => cmpNum(a.book, b.book)
+      || (a.book === Infinity || !byBook ? cmpNum(a.rep, b.rep) : 0)
+      || String(a.w.id ?? '').localeCompare(String(b.w.id ?? '')) || (a.i - b.i))
     .map((x) => x.w);
+}
+
+/** 並べ替えのキーを正しい値にそろえる（知らない値は 'sentence'） */
+export function normalizeSortKey(key) {
+  return Object.prototype.hasOwnProperty.call(SORT_KEYS, key) ? key : 'sentence';
+}
+
+function defaultStorage() {
+  try { return globalThis.localStorage || null; } catch { return null; }
+}
+
+/** 単語一覧の設定を読む（無い・壊れている・使えない環境では { sort: 'sentence' }） */
+export function loadWordListSettings(storage = defaultStorage()) {
+  try {
+    const text = storage ? storage.getItem(WORDLIST_KEY) : null;
+    const raw = text ? JSON.parse(text) : null;
+    return { sort: normalizeSortKey(raw && typeof raw === 'object' ? raw.sort : undefined) };
+  } catch {
+    return { sort: 'sentence' };
+  }
+}
+
+/** 単語一覧の設定を書く。書けたら true */
+export function saveWordListSettings(settings, storage = defaultStorage()) {
+  try {
+    if (!storage) return false;
+    storage.setItem(WORDLIST_KEY, JSON.stringify({ version: 1, sort: normalizeSortKey(settings && settings.sort) }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 検索のことばが本の番号の形（「87」「No.87」「no87」「No 87」。全角も可）なら、その番号。違えば null
+ */
+export function parseBookNoQuery(text) {
+  const t = normalizeText(text);
+  const m = /^(?:no\.?\s*)?(\d+)$/.exec(t);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isSafeInteger(n) && n >= 1 ? n : null;
 }
 
 // 語ごとの検索用文字列のキャッシュ（同じ語を何度も正規化しないため）
@@ -153,25 +221,32 @@ function searchKeysOf(word) {
 export function normalizeQuery(query) {
   const q = typeof query === 'string' ? { text: query } : (query && typeof query === 'object' ? query : {});
   const stageNum = Number(q.stage);
+  let stage = q.stage === 'all' || q.stage == null || q.stage === '' || !Number.isInteger(stageNum) || stageNum < 1 ? 'all' : stageNum;
+  if (q.stage === 'none') stage = 'none'; // ステージなし（例文も関連例文も無い語）
   return {
     text: normalizeText(q.text),
-    stage: q.stage === 'all' || q.stage == null || q.stage === '' || !Number.isInteger(stageNum) || stageNum < 1 ? 'all' : stageNum,
+    stage,
     status: STATUS_FILTERS.includes(q.status) ? q.status : 'all',
     pos: Object.prototype.hasOwnProperty.call(POS_GROUPS, q.pos) ? q.pos : 'all',
   };
 }
 
-/** 1 語が条件に合うか（q は normalizeQuery 済み） */
-function matches(word, progress, q) {
-  if (q.stage !== 'all' && wordStage(word) !== q.stage) return false;
+/** 1 語が条件に合うか（q は normalizeQuery 済み。bookNoQ は検索の本の番号か null） */
+function matches(word, progress, q, bookNoQ) {
+  if (q.stage === 'none') {
+    if (wordStage(word) !== 0) return false;
+  } else if (q.stage !== 'all' && wordStage(word) !== q.stage) return false;
   if (q.pos !== 'all' && posGroupOf(word) !== q.pos) return false;
   if (q.status === 'unverified') {
     if (word.verified === true) return false;
+  } else if (q.status === 'nosentence') {
+    if (!isNoSentenceWord(word)) return false;
   } else if (q.status !== 'all') {
     const rec = progress && Object.prototype.hasOwnProperty.call(progress, word.id) ? progress[word.id] : undefined;
     if (statusOf(rec) !== q.status) return false;
   }
   if (q.text) {
+    if (bookNoQ !== null && bookNoOf(word) === bookNoQ) return true; // 本の番号の完全一致
     const k = searchKeysOf(word);
     if (!k.word.includes(q.text) && !k.meaning.includes(q.text)) return false;
   }
@@ -183,14 +258,15 @@ function matches(word, progress, q) {
  * @param {Array} words 全単語
  * @param {object} progress 学習記録（loadProgress の結果）
  * @param {string|{text?, stage?, status?, pos?}} query
- *   stage：'all' か 1 以上の整数 / status：STATUS_FILTERS / pos：POS_GROUPS のキー
+ *   stage：'all'・'none'（ステージなし）か 1 以上の整数 / status：STATUS_FILTERS / pos：POS_GROUPS のキー
  */
 export function filterWords(words, progress, query) {
   const q = normalizeQuery(query);
   const p = progress && typeof progress === 'object' ? progress : {};
+  const bookNoQ = q.text ? parseBookNoQuery(q.text) : null;
   const out = [];
   for (const w of Array.isArray(words) ? words : []) {
-    if (w && matches(w, p, q)) out.push(w);
+    if (w && matches(w, p, q, bookNoQ)) out.push(w);
   }
   return out;
 }
@@ -266,6 +342,21 @@ function statusBadge(status) {
     STATUS_LABELS[status]);
 }
 
+/** 本の番号の小さな印（bookNo が無い語は null） */
+function bookNoBadge(word) {
+  const no = bookNoOf(word);
+  return no === null ? null : el('span', { class: 'book-no', title: '本の見出し語の番号', text: `No.${no}` });
+}
+
+/** 行の右上に出す例文の番号（例文 12 / 関連 30 / ステージなし） */
+function exampleLabel(word) {
+  const rep = representativeId(word);
+  if (rep != null) return `例文 ${rep}`;
+  const sid = stageSentenceId(word);
+  if (sid != null) return `関連 ${sid}`;
+  return isNoSentenceWord(word) ? 'ステージなし' : '例文 —';
+}
+
 function unverifiedBadge(word) {
   return word.verified !== true
     ? el('span', { class: 'badge-unverified', title: 'まだ本と照合していない語です', text: '未確認' })
@@ -294,11 +385,13 @@ export async function startWordList(root, ctx) {
   };
   const progress = { ...safe(() => loadProgress(), {}) };
   const recOf = (id) => (Object.prototype.hasOwnProperty.call(progress, id) ? progress[id] : undefined);
-  const sorted = sortWords(words);
+  const wlSettings = loadWordListSettings();
+  let sorted = sortWords(words, wlSettings.sort);
   const byId = new Map(sorted.map((w) => [String(w.id), w]));
   const stages = listWordStages(sorted);
+  const hasNoStage = sorted.some((w) => wordStage(w) === 0);
 
-  const state = { text: '', stage: 'all', status: 'all', pos: 'all' };
+  const state = { text: '', stage: 'all', status: 'all', pos: 'all', sort: wlSettings.sort };
   let result = [];       // 絞り込んだ結果
   let shown = 0;         // 描いた件数
   let observer = null;
@@ -331,8 +424,8 @@ export async function startWordList(root, ctx) {
 
   // ---- 絞り込みの部品 ----
   const searchInput = el('input', {
-    type: 'search', class: 'wl-search', 'aria-label': '見出し語か意味で検索',
-    placeholder: '見出し語・意味で検索', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off',
+    type: 'search', class: 'wl-search', 'aria-label': '見出し語・意味・本の番号で検索',
+    placeholder: '見出し語・意味・本の番号で検索', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off',
     spellcheck: 'false', enterkeyhint: 'search',
   });
   const search = debounce(() => { state.text = searchInput.value; apply(); }, DEBOUNCE_MS);
@@ -346,31 +439,40 @@ export async function startWordList(root, ctx) {
       options.map(([value, text]) => { const o = new Option(text, String(value)); return o; }));
     sel.value = String(state[key]);
     sel.addEventListener('change', () => {
-      state[key] = key === 'stage' && sel.value !== 'all' ? Number(sel.value) : sel.value;
+      if (key === 'sort') {
+        state.sort = normalizeSortKey(sel.value);
+        sorted = sortWords(words, state.sort);
+        saveWordListSettings({ sort: state.sort }); // 覚えられなくても続ける
+      } else {
+        state[key] = key === 'stage' && sel.value !== 'all' && sel.value !== 'none' ? Number(sel.value) : sel.value;
+      }
       apply();
     });
     return el('div', { class: 'wl-field' }, el('label', { class: 'field-label', for: id, text: label }), sel);
   }
 
   const stageField = selectBox('wl-stage', 'ステージ',
-    [['all', 'すべて'], ...stages.map((s) => [s.stage, `ステージ ${s.stage}（例文 ${s.from}〜${s.to}）`])], 'stage');
+    [['all', 'すべて'], ...stages.map((s) => [s.stage, `ステージ ${s.stage}（例文 ${s.from}〜${s.to}）`]),
+      ...(hasNoStage ? [['none', 'ステージなし']] : [])], 'stage');
   const statusField = selectBox('wl-status', '習得状況',
     [['all', 'すべて'], ...['new', 'learning', 'learned', 'mastered'].map((k) => [k, `${STATUS_MARKS[k]} ${STATUS_LABELS[k]}`]),
-      ['unverified', '未確認の語だけ']], 'status');
+      ['unverified', '未確認の語だけ'], ['nosentence', '例文なし（まとめの語）']], 'status');
   const posField = selectBox('wl-pos', '品詞', Object.entries(POS_GROUPS), 'pos');
+  const sortField = selectBox('wl-sort', '並べ替え',
+    [['sentence', `${SORT_KEYS.sentence}（今まで）`], ['book', `${SORT_KEYS.book}（番号の無い語は最後）`]], 'sort');
 
   // ---- 一覧 ----
 
   function rowOf(w) {
     const status = statusOf(recOf(w.id));
-    const rep = representativeId(w);
     return el('li', { class: 'wl-item' },
       el('button', { type: 'button', class: `wl-row wl-row-${status}`, 'data-id': String(w.id) },
         el('span', { class: 'wl-row-top' },
           el('span', { class: 'wl-word', lang: 'en', text: w.word || '' }),
+          bookNoBadge(w),
           w.pos ? el('span', { class: 'pos', text: w.pos }) : null,
           unverifiedBadge(w),
-          el('span', { class: 'wl-ex', text: rep == null ? '例文 —' : `例文 ${rep}` }),
+          el('span', { class: 'wl-ex', text: exampleLabel(w) }),
         ),
         el('span', { class: 'wl-row-bottom' },
           statusBadge(status),
@@ -495,25 +597,48 @@ export async function startWordList(root, ctx) {
       })));
   }
 
+  /** 詳細の例文の部分（例文にない語は、まとめと関連例文） */
+  function exampleSection(word) {
+    if (isNoSentenceWord(word)) {
+      const g = typeof word.group === 'string' ? word.group.trim() : '';
+      const relId = relatedSentenceId(word);
+      const related = relId == null ? undefined : getSentence(relId);
+      return [
+        el('h3', { class: 'wl-sub', text: 'まとめ' }),
+        el('p', { class: 'group-line' }, g ? el('strong', { text: g }) : el('span', { class: 'muted', text: '（まとめの見出しはありません）' })),
+        el('p', { class: 'muted small', text: 'この語は例文には出てきません。' }),
+        relId == null ? null : el('h3', { class: 'wl-sub', text: `関連例文（例文 ${relId}）` }),
+        relId == null ? null
+          : (related && related.en ? el('p', { class: 'sentence-en', lang: 'en', text: related.en }) : el('p', { class: 'muted', text: '例文が見つかりません。' })),
+        related && related.ja ? el('p', { class: 'sentence-ja', text: related.ja }) : null,
+        el('div', { class: 'btn-row' }, related ? listenButton(related) : null, speakButton(word)),
+      ];
+    }
+    const rep = representativeId(word);
+    const sentence = getSentence(rep);
+    return [
+      el('h3', { class: 'wl-sub', text: rep == null ? '代表の例文' : `代表の例文（例文 ${rep}）` }),
+      sentence ? boldSentence(sentence, word) : el('p', { class: 'muted', text: '例文が見つかりません。' }),
+      sentence && sentence.ja ? el('p', { class: 'sentence-ja', text: sentence.ja }) : null,
+      el('div', { class: 'btn-row' }, listenButton(sentence), speakButton(word)),
+    ];
+  }
+
   function openDetail(word, fromBtn) {
     closeDetail({ restoreFocus: false });
     sheetToken += 1;
     lastFocus = fromBtn || null;
-    const rep = representativeId(word);
-    const sentence = getSentence(rep);
     const closeBtn = el('button', { type: 'button', class: 'btn wl-close', onclick: () => closeDetail() }, '閉じる');
     const panel = el('div', { class: 'wl-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'wl-sheet-title', tabindex: '-1' },
       el('div', { class: 'wl-sheet-body' },
         el('div', { class: 'headword-row' },
           el('span', { class: 'headword', lang: 'en', id: 'wl-sheet-title', text: word.word || '' }),
+          bookNoBadge(word),
           unverifiedBadge(word),
           word.pos ? el('span', { class: 'pos', text: word.pos }) : null,
         ),
         el('p', { class: 'meaning', text: word.meaning || '-' }),
-        el('h3', { class: 'wl-sub', text: rep == null ? '代表の例文' : `代表の例文（例文 ${rep}）` }),
-        sentence ? boldSentence(sentence, word) : el('p', { class: 'muted', text: '例文が見つかりません。' }),
-        sentence && sentence.ja ? el('p', { class: 'sentence-ja', text: sentence.ja }) : null,
-        el('div', { class: 'btn-row' }, listenButton(sentence), speakButton(word)),
+        ...exampleSection(word),
         recordBox(recOf(word.id)),
         otherSentencesBox(word),
       ),
@@ -548,7 +673,7 @@ export async function startWordList(root, ctx) {
   );
   const filters = el('div', { class: 'card wl-filters' },
     searchInput,
-    el('div', { class: 'wl-selects' }, stageField, statusField, posField),
+    el('div', { class: 'wl-selects' }, stageField, statusField, posField, sortField),
   );
   root.replaceChildren(el('div', { class: 'wordlist' },
     head,

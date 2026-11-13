@@ -13,6 +13,8 @@
        - sentences の id の重複、file の重複、file 名が ASCII でない
        - sentences の各 file に対応する mp3 が --audio-dir にない
        - words の id の重複、sentenceIds に sentences にない番号がある
+       - words の bookNo（本の番号）の重複、relatedSentenceIds に sentences にない番号がある
+       （sentenceIds が空の語は警告。ただし source が book の語は例文にない語として通す）
        問題があれば一覧を表示して中止する（終了コード 1、zip は作らない）。
        seg が欠けている例文などは「警告」として表示するが、作成は続ける。
     2. zip を作る。mp3 は無圧縮（ZIP_STORED）、json は ZIP_DEFLATED。
@@ -89,6 +91,7 @@ def check_inputs(sentences, words, audio_dir: Path) -> tuple[list[str], list[str
 
     # --- words ---
     word_ids: set = set()
+    book_nos: dict = {}  # bookNo → 最初に出てきた語の label
     for i, w in enumerate(words, start=1):
         wid = w.get("id")
         label = f"words {i} 件目（id={wid}）"
@@ -98,11 +101,30 @@ def check_inputs(sentences, words, audio_dir: Path) -> tuple[list[str], list[str
             errors.append(f"{label}: id {wid} が重複しています")
         word_ids.add(wid)
 
+        # 本の番号（任意）：重複していたら中止
+        book_no = w.get("bookNo")
+        if book_no is not None:
+            if book_no in book_nos:
+                errors.append(f"{label}: bookNo {book_no} が {book_nos[book_no]} と重複しています")
+            else:
+                book_nos[book_no] = label
+
+        # 関連例文（任意）：sentences にない番号があれば中止
+        rel = w.get("relatedSentenceIds")
+        if rel is not None:
+            if not isinstance(rel, list):
+                errors.append(f"{label}: relatedSentenceIds が配列になっていません")
+            else:
+                for n in rel:
+                    if n not in sentence_ids:
+                        errors.append(f"{label}: relatedSentenceIds の {n} が sentences にありません")
+
         sids = w.get("sentenceIds")
         if not isinstance(sids, list):
             errors.append(f"{label}: sentenceIds が配列になっていません")
             continue
-        if not sids:
+        if not sids and w.get("source") != "book":
+            # 出典が book の語（例文にないまとめの語）は空でよい
             warnings.append(f"{label}: sentenceIds が空です")
         for n in sids:
             if n not in sentence_ids:

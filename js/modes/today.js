@@ -18,8 +18,13 @@
 //   答えた後の画面では出す。
 // - スペルの「わからない」は不正解として記録する。
 // - 例文の音声は、カード・問題を表示した時点で prepare() し、ボタンでは playSegment() だけを呼ぶ（iPhone 対策）。
+// - 本の番号（bookNo）がある語は、見出し語の近くに小さく「No.87」と出す。
+// - 例文にない語（sentenceIds が空。srs.isNoSentenceWord）：
+//   出会うカードでは例文の代わりに「まとめ：○○」（group があれば）と関連例文（relatedSentenceIds の最初。
+//   見出し語は太字にしない）とその和訳を出す。音声ボタンは関連例文があればそれを鳴らし、無ければ出さない。
+//   出題は箱に関係なく意味 4 択だけ（makeChoice）。答え合わせでも、まとめと関連例文を出す。
 
-import { todayStr, applyAnswer, buildDailyMenu } from '../srs.js';
+import { todayStr, applyAnswer, buildDailyMenu, bookNoOf, isNoSentenceWord, relatedSentenceId } from '../srs.js';
 import { loadProgress, loadSettings, saveRecord, logAnswer, dayLog, streak } from '../store.js';
 import { makeQuestion, makeChoice, findForm, checkSpelling } from '../quiz.js';
 import { prepare, playSegment, speakWord, stop } from '../audio.js';
@@ -71,10 +76,17 @@ function cancelSpeech() {
   if (canSpeak()) { try { speechSynthesis.cancel(); } catch { /* 無視 */ } }
 }
 
-/** 見出し語（＋未確認の印、品詞） */
+/** 本の番号の小さな印（bookNo が無い語は null） */
+function bookNoBadge(word) {
+  const no = bookNoOf(word);
+  return no === null ? null : el('span', { class: 'book-no', title: '本の見出し語の番号', text: `No.${no}` });
+}
+
+/** 見出し語（＋本の番号、未確認の印、品詞） */
 function headword(word, { big = true, showPos = true } = {}) {
   return el('div', { class: big ? 'headword-row' : 'headword-row headword-row-small' },
     el('span', { class: 'headword', lang: 'en', text: word.word || '' }),
+    bookNoBadge(word),
     word.verified !== true ? el('span', { class: 'badge-unverified', title: 'まだ本と照合していない語です', text: '未確認' }) : null,
     showPos && word.pos ? el('span', { class: 'pos', text: word.pos }) : null,
   );
@@ -105,6 +117,28 @@ function jaSentence(sentence) {
   return el('p', { class: 'sentence-ja', text: sentence.ja });
 }
 
+/** 「まとめ：家族」（group が無い語は null） */
+function groupLine(word) {
+  const g = word && typeof word.group === 'string' ? word.group.trim() : '';
+  return g ? el('p', { class: 'group-line' }, 'まとめ：', el('strong', { text: g })) : null;
+}
+
+/** 関連例文（見出しつき。見出し語は太字にしない）。例文が無ければ null */
+function relatedSentenceBlock(sentence) {
+  if (!sentence || !sentence.en) return null;
+  return el('div', { class: 'related-sentence' },
+    el('p', { class: 'related-label', text: '関連例文' }),
+    el('p', { class: 'sentence-en', lang: 'en', text: sentence.en }),
+    jaSentence(sentence),
+  );
+}
+
+/** 例文の音声が鳴らせる例文か */
+function hasAudio(sentence) {
+  const seg = sentence && sentence.seg && sentence.seg.en1;
+  return !!(sentence && sentence.file && Array.isArray(seg) && seg.length >= 2);
+}
+
 // ---------- 画面本体 ----------
 
 export async function startToday(root, ctx) {
@@ -115,6 +149,8 @@ export async function startToday(root, ctx) {
     return sentencesById instanceof Map ? sentencesById.get(id) : sentencesById[id];
   };
   const sentenceOf = (word) => getSentence(Array.isArray(word.sentenceIds) ? word.sentenceIds[0] : undefined);
+  // 例文にない語の関連例文（表示と音声だけに使い、出題には使わない）
+  const relatedOf = (word) => getSentence(relatedSentenceId(word) ?? undefined);
 
   // 1 日のメニュー
   const today = todayStr();
@@ -284,6 +320,7 @@ export async function startToday(root, ctx) {
   function renderMeet(item) {
     beginScreen();
     const word = wordsById.get(item.id);
+    if (isNoSentenceWord(word)) { renderMeetNoSentence(item, word); return; }
     const sentence = sentenceOf(word);
     const body = [
       el('p', { class: 'kicker', text: '新しい語' }),
@@ -304,9 +341,33 @@ export async function startToday(root, ctx) {
     mount(body, bottom);
   }
 
+  /** 例文にない語の「出会う」カード（まとめ・関連例文・意味） */
+  function renderMeetNoSentence(item, word) {
+    const related = relatedOf(word);
+    const body = [
+      el('p', { class: 'kicker', text: '新しい語' }),
+      el('div', { class: 'card' },
+        headword(word),
+        groupLine(word),
+        relatedSentenceBlock(related),
+        buttonRow(hasAudio(related) ? listenButton(related, { primary: true }) : null, speakButton(word)),
+        el('dl', { class: 'meaning-box' },
+          el('dt', { text: '意味' }),
+          el('dd', { class: 'meaning', text: word.meaning || '-' }),
+        ),
+      ),
+    ];
+    const bottom = el('button', {
+      type: 'button', class: 'btn btn-primary btn-next', onclick: () => renderQuestion(item),
+    }, '覚えた、問題へ');
+    mount(body, bottom);
+  }
+
   // ---- 問題 ----
 
   function makeQ(word, sentence) {
+    // 例文にない語は、箱に関係なく意味 4 択だけ
+    if (isNoSentenceWord(word)) return safe(() => makeChoice(word, words), null);
     const rec = progress[word.id];
     const box = rec && Number.isInteger(rec.box) ? rec.box : 0;
     let q = null;
@@ -368,6 +429,23 @@ export async function startToday(root, ctx) {
     return box;
   }
 
+  /** 答え合わせの例文の部分（例文にない語は、まとめと関連例文） */
+  function exampleArea(word, sentence) {
+    if (isNoSentenceWord(word)) {
+      const related = relatedOf(word);
+      return [
+        groupLine(word),
+        relatedSentenceBlock(related),
+        buttonRow(hasAudio(related) ? listenButton(related) : null, speakButton(word)),
+      ];
+    }
+    return [
+      boldSentence(sentence, word),
+      jaSentence(sentence),
+      buttonRow(listenButton(sentence), speakButton(word)),
+    ];
+  }
+
   /** 答えた後：本体を「答え合わせ」に差し替え、下に「次へ」を足す */
   function showFeedback(item, word, sentence, correct, { answerText = '', extraBottom = null } = {}) {
     const study = root.querySelector('.study');
@@ -382,9 +460,7 @@ export async function startToday(root, ctx) {
       !correct && answerText ? el('p', { class: 'answer-line' }, '正しい答え：', el('strong', { lang: 'en', text: answerText })) : null,
       headword(word),
       el('p', { class: 'meaning', text: word.meaning || '' }),
-      boldSentence(sentence, word),
-      jaSentence(sentence),
-      buttonRow(listenButton(sentence), speakButton(word)),
+      ...exampleArea(word, sentence),
       !correct && !item.retry ? el('p', { class: 'muted small', text: 'この語は、最後にもう一度出します。' }) : null,
     );
     bodyEl.replaceChildren(card);
@@ -407,7 +483,7 @@ export async function startToday(root, ctx) {
       el('div', { class: 'card' },
         headword(word, { showPos: false }),
         boldSentence(sentence, word),
-        buttonRow(listenButton(sentence), speakButton(word)),
+        buttonRow(isNoSentenceWord(word) ? null : listenButton(sentence), speakButton(word)),
       ),
     ];
     const bottom = optionButtons(q, {
@@ -424,6 +500,7 @@ export async function startToday(root, ctx) {
     const body = [
       kicker(item, '例文を聞いて、空欄に入る語を選ぼう'),
       el('div', { class: 'card' },
+        bookNoBadge(word),
         listenButton(sentence, { primary: true }),
         blankSentence(q.parts),
       ),
@@ -444,7 +521,9 @@ export async function startToday(root, ctx) {
       kicker(item, '意味に合う英語を書こう'),
       el('div', { class: 'card' },
         el('p', { class: 'meaning meaning-big', text: q.meaning || word.meaning || '' }),
-        word.pos ? el('p', { class: 'pos', text: word.pos }) : null,
+        word.pos || bookNoOf(word) !== null
+          ? el('p', { class: 'pos' }, word.pos || '', bookNoBadge(word))
+          : null,
         blankSentence(q.parts),
         buttonRow(listenButton(sentence)),
       ),

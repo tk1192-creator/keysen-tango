@@ -18,6 +18,12 @@ import {
   countByStatus,
   spokenText,
   debounce,
+  SORT_KEYS,
+  WORDLIST_KEY,
+  normalizeSortKey,
+  loadWordListSettings,
+  saveWordListSettings,
+  parseBookNoQuery,
 } from '../js/modes/wordlist.js';
 
 // ダミーの単語
@@ -229,4 +235,91 @@ test('debounce：続けて呼んだら最後の 1 回だけ。cancel で止ま�
   f(4); f.cancel();
   await new Promise((r) => setTimeout(r, 50));
   assert.deepEqual(calls, [3]);
+});
+
+// ---------- 本の番号（bookNo）・例文にない語 ----------
+
+const BOOK_WORDS = [
+  w('w0101', 'alphadum', 'アルファのダミー', '名詞', [3], { bookNo: 87 }),
+  w('w0102', 'betadum', 'ベータのダミー', '動詞', [1], { bookNo: 12 }),
+  w('w0103', 'gammadum', 'ガンマのダミー', '名詞', [], { bookNo: 88, group: 'ダミーのまとめ', relatedSentenceIds: [60] }),
+  w('w0104', 'deltadum', 'デルタのダミー', '名詞', [2]),                          // bookNo なし
+  w('w0105', 'epsdum', 'イプシロンのダミー', '名詞', [], { group: 'ダミーのまとめ' }), // ステージなし
+  w('w0106', 'zetadum 87', '数字入りのダミー', '名詞', [4]),                       // 見出し語に 87 を含む
+];
+
+test('parseBookNoQuery：数字だけ・No.87・no87・全角', () => {
+  assert.equal(parseBookNoQuery('87'), 87);
+  assert.equal(parseBookNoQuery('No.87'), 87);
+  assert.equal(parseBookNoQuery('no87'), 87);
+  assert.equal(parseBookNoQuery('NO 87'), 87);
+  assert.equal(parseBookNoQuery('８７'), 87);
+  assert.equal(parseBookNoQuery(' Ｎｏ．87 '), 87);
+  assert.equal(parseBookNoQuery('87a'), null);
+  assert.equal(parseBookNoQuery('note'), null);
+  assert.equal(parseBookNoQuery('0'), null);
+  assert.equal(parseBookNoQuery(''), null);
+});
+
+test('filterWords：数字なら bookNo の完全一致でも探す（部分一致は見出し語・意味だけ）', () => {
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, '87')), ['w0101', 'w0106']); // No.87 と、見出し語に 87 を含む語
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, 'No.87')), ['w0101']);
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, 'no87')), ['w0101']);
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, '8')), ['w0106']); // bookNo は完全一致だけ（87・88 は出ない。見出し語の部分一致は出る）
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, '12')), ['w0102']);
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, { text: '88', status: 'nosentence' })), ['w0103']);
+});
+
+test('filterWords：例文なし（まとめの語）とステージなし', () => {
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, { status: 'nosentence' })), ['w0103', 'w0105']);
+  assert.deepEqual(ids(filterWords(WORDS, PROGRESS, { status: 'nosentence' })), ['w0008']);
+  assert.equal(normalizeQuery({ stage: 'none' }).stage, 'none');
+  assert.equal(normalizeQuery({ status: 'nosentence' }).status, 'nosentence');
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, { stage: 'none' })), ['w0105']);
+  assert.deepEqual(ids(filterWords(BOOK_WORDS, {}, { stage: 2 })), ['w0103']); // 関連例文 60 → ステージ 2
+});
+
+test('wordStage：例文にない語は関連例文で決める。どちらも無ければ 0', () => {
+  assert.equal(wordStage(BOOK_WORDS[2]), 2);
+  assert.equal(wordStage(BOOK_WORDS[4]), 0);
+  assert.equal(wordStage(w('w0200', 'x', 'x', '名詞', [7], { relatedSentenceIds: [400] })), 1);
+  assert.equal(listWordStages(BOOK_WORDS).length, 2);
+});
+
+test('sortWords：本の番号順（bookNo の無い語は最後、その中は例文の順）。既定は例文の順', () => {
+  assert.deepEqual(ids(sortWords(BOOK_WORDS, 'book')), ['w0102', 'w0101', 'w0103', 'w0104', 'w0106', 'w0105']);
+  assert.deepEqual(ids(sortWords(BOOK_WORDS)), ['w0102', 'w0104', 'w0101', 'w0106', 'w0103', 'w0105']);
+  assert.deepEqual(ids(sortWords(BOOK_WORDS, 'sentence')), ids(sortWords(BOOK_WORDS)));
+  assert.deepEqual(ids(sortWords(BOOK_WORDS, 'xxx')), ids(sortWords(BOOK_WORDS)));
+  // bookNo の無いデータでは、本の番号順も例文の順と同じ
+  assert.deepEqual(ids(sortWords(WORDS, 'book')), ids(sortWords(WORDS)));
+});
+
+/** localStorage の代わり */
+function memoryStorage(initial = {}) {
+  const data = { ...initial };
+  return {
+    data,
+    getItem: (k) => (Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null),
+    setItem: (k, v) => { data[k] = String(v); },
+    removeItem: (k) => { delete data[k]; },
+  };
+}
+
+test('並べ替えの設定：kk.wordlist.v1 に覚える。壊れていても既定値', () => {
+  assert.equal(WORDLIST_KEY, 'kk.wordlist.v1');
+  assert.deepEqual(Object.keys(SORT_KEYS), ['sentence', 'book']);
+  assert.equal(normalizeSortKey('book'), 'book');
+  assert.equal(normalizeSortKey('toString'), 'sentence');
+  const st = memoryStorage();
+  assert.deepEqual(loadWordListSettings(st), { sort: 'sentence' });
+  assert.equal(saveWordListSettings({ sort: 'book' }, st), true);
+  assert.deepEqual(JSON.parse(st.data[WORDLIST_KEY]), { version: 1, sort: 'book' });
+  assert.deepEqual(loadWordListSettings(st), { sort: 'book' });
+  assert.deepEqual(loadWordListSettings(memoryStorage({ [WORDLIST_KEY]: '{壊れた' })), { sort: 'sentence' });
+  assert.deepEqual(loadWordListSettings(memoryStorage({ [WORDLIST_KEY]: '{"sort":"zzz"}' })), { sort: 'sentence' });
+  assert.deepEqual(loadWordListSettings(null), { sort: 'sentence' });
+  const broken = { getItem: () => { throw new Error('使えない'); }, setItem: () => { throw new Error('使えない'); } };
+  assert.deepEqual(loadWordListSettings(broken), { sort: 'sentence' });
+  assert.equal(saveWordListSettings({ sort: 'book' }, broken), false);
 });

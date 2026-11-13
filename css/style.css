@@ -166,6 +166,18 @@ code { font-size: 0.9em; overflow-wrap: anywhere; }
   border: 1px solid var(--muted); border-radius: 6px; color: var(--muted);
 }
 .pos { font-size: 15px; color: var(--muted); }
+/* 本の見出し語の番号（No.87） */
+.book-no {
+  display: inline-block; font-size: 14px; line-height: 1.6; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.pos .book-no { margin-left: 8px; }
+/* 例文にない語：まとめの見出しと関連例文 */
+.group-line { font-size: 17px; margin: 4px 0 8px; }
+.group-line strong { font-weight: 700; }
+.related-sentence { margin: 8px 0; padding-left: 10px; border-left: 3px solid var(--line); }
+.related-label { margin: 0; font-size: 14px; color: var(--muted); font-weight: 600; }
+.related-sentence .sentence-en { margin: 4px 0 8px !important; }
 
 .sentence-en { font-size: 21px; line-height: 1.6; margin: 8px 0 12px !important; overflow-wrap: anywhere; }
 .sentence-en strong { font-weight: 800; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }

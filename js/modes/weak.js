@@ -24,11 +24,14 @@
 // - 「克服」した語も、学習記録の上で苦手の条件に当てはまる間は一覧と出題に残す（印を出すだけ）。
 // - 不正解の語は、その回の最後にもう一度だけ出す。
 // - 穴埋め・スペルでは答える前に「単語の発音」を出さない（today.js と同じ）。スペルの「わからない」は不正解。
+// - 本の番号（bookNo）がある語は、見出し語の近くに小さく「No.87」と出す（一覧・問題・答え合わせ）。
+// - 例文にない語（sentenceIds が空。srs.isNoSentenceWord）は、選んだ形式に関係なく意味 4 択だけ。
+//   答え合わせでは例文の代わりに「まとめ：○○」と関連例文（relatedSentenceIds の最初。太字なし）を出す（today.js と同じ）。
 //
 // 音声（audio.js）は読み込んだ時点で Audio 要素を作るため、node のテストで import できるように
 // startWeak の中で動的 import する。DOM を使わない関数はこのファイルから export してテストする。
 
-import { todayStr } from '../srs.js';
+import { todayStr, bookNoOf, isNoSentenceWord, relatedSentenceId } from '../srs.js';
 import { loadProgress, logAnswer } from '../store.js';
 import { makeQuestion, makeChoice, findForm, checkSpelling } from '../quiz.js';
 
@@ -237,9 +240,38 @@ function overcomeBadge(stat) {
     : null;
 }
 
+/** 本の番号の小さな印（bookNo が無い語は null） */
+function bookNoBadge(word) {
+  const no = bookNoOf(word);
+  return no === null ? null : el('span', { class: 'book-no', title: '本の見出し語の番号', text: `No.${no}` });
+}
+
+/** 「まとめ：家族」（group が無い語は null） */
+function groupLine(word) {
+  const g = word && typeof word.group === 'string' ? word.group.trim() : '';
+  return g ? el('p', { class: 'group-line' }, 'まとめ：', el('strong', { text: g })) : null;
+}
+
+/** 関連例文（見出しつき。見出し語は太字にしない）。例文が無ければ null */
+function relatedSentenceBlock(sentence) {
+  if (!sentence || !sentence.en) return null;
+  return el('div', { class: 'related-sentence' },
+    el('p', { class: 'related-label', text: '関連例文' }),
+    el('p', { class: 'sentence-en', lang: 'en', text: sentence.en }),
+    sentence.ja ? el('p', { class: 'sentence-ja', text: sentence.ja }) : null,
+  );
+}
+
+/** 例文の音声が鳴らせる例文か */
+function hasAudio(sentence) {
+  const seg = sentence && sentence.seg && sentence.seg.en1;
+  return !!(sentence && sentence.file && Array.isArray(seg) && seg.length >= 2);
+}
+
 function headword(word, { showPos = true } = {}) {
   return el('div', { class: 'headword-row' },
     el('span', { class: 'headword', lang: 'en', text: word.word || '' }),
+    bookNoBadge(word),
     unverifiedBadge(word),
     showPos && word.pos ? el('span', { class: 'pos', text: word.pos }) : null,
   );
@@ -278,6 +310,8 @@ export async function startWeak(root, ctx) {
     return sentencesById instanceof Map ? sentencesById.get(id) : sentencesById[id];
   };
   const sentenceOf = (word) => getSentence(Array.isArray(word.sentenceIds) ? word.sentenceIds[0] : undefined);
+  // 例文にない語の関連例文（表示と音声だけに使い、出題には使わない）
+  const relatedOf = (word) => getSentence(relatedSentenceId(word) ?? undefined);
 
   const today = todayStr();
   const progress = { ...safe(() => loadProgress(), {}) }; // 読むだけ（箱・期限は変えない）
@@ -462,6 +496,7 @@ export async function startWeak(root, ctx) {
       return el('li', { class: 'weak-item' },
         el('div', { class: 'weak-item-head' },
           el('span', { class: 'weak-word', lang: 'en', text: w.word || '' }),
+          bookNoBadge(w),
           unverifiedBadge(w),
           overcomeBadge(stat),
           el('span', { class: 'weak-wrong', text: `まちがい ${nonNegInt(rec.wrong)} 回` }),
@@ -528,6 +563,8 @@ export async function startWeak(root, ctx) {
   // ---- 問題 ----
 
   function makeQ(word, sentence) {
+    // 例文にない語は、選んだ形式に関係なく意味 4 択だけ
+    if (isNoSentenceWord(word)) return safe(() => makeChoice(word, words), null);
     const box = boxForFormat(settings.format, progress[word.id]);
     let q = null;
     if (sentence) q = safe(() => makeQuestion(word, sentence, words, box), null);
@@ -586,6 +623,23 @@ export async function startWeak(root, ctx) {
     return box;
   }
 
+  /** 答え合わせの例文の部分（例文にない語は、まとめと関連例文） */
+  function exampleArea(word, sentence) {
+    if (isNoSentenceWord(word)) {
+      const related = relatedOf(word);
+      return [
+        groupLine(word),
+        relatedSentenceBlock(related),
+        buttonRow(hasAudio(related) ? listenButton(related) : null, speakButton(word)),
+      ];
+    }
+    return [
+      boldSentence(sentence, word),
+      jaSentence(sentence),
+      buttonRow(listenButton(sentence), speakButton(word)),
+    ];
+  }
+
   function showFeedback(item, word, sentence, correct, { answerText = '', extraBottom = null } = {}) {
     const study = root.querySelector('.study');
     const bodyEl = study.querySelector('.study-body');
@@ -600,9 +654,7 @@ export async function startWeak(root, ctx) {
       !correct && answerText ? el('p', { class: 'answer-line' }, '正しい答え：', el('strong', { lang: 'en', text: answerText })) : null,
       headword(word),
       el('p', { class: 'meaning', text: word.meaning || '' }),
-      boldSentence(sentence, word),
-      jaSentence(sentence),
-      buttonRow(listenButton(sentence), speakButton(word)),
+      ...exampleArea(word, sentence),
       correct && isOvercome(stat)
         ? el('p', { class: 'weak-overcome-line' }, overcomeBadge(stat), ` 苦手復習で ${stat.streak} 回続けて正解しています。`)
         : null,
@@ -625,7 +677,7 @@ export async function startWeak(root, ctx) {
       el('div', { class: 'card' },
         headword(word, { showPos: false }),
         boldSentence(sentence, word),
-        buttonRow(listenButton(sentence), speakButton(word)),
+        buttonRow(isNoSentenceWord(word) ? null : listenButton(sentence), speakButton(word)),
       ),
     ];
     const bottom = optionButtons(q, {
@@ -642,6 +694,7 @@ export async function startWeak(root, ctx) {
     const body = [
       kicker(item, '例文を聞いて、空欄に入る語を選ぼう'),
       el('div', { class: 'card' },
+        bookNoBadge(word),
         listenButton(sentence, { primary: true }),
         blankSentence(q.parts),
       ),
@@ -662,7 +715,9 @@ export async function startWeak(root, ctx) {
       kicker(item, '意味に合う英語を書こう'),
       el('div', { class: 'card' },
         el('p', { class: 'meaning meaning-big', text: q.meaning || word.meaning || '' }),
-        word.pos ? el('p', { class: 'pos', text: word.pos }) : null,
+        word.pos || bookNoOf(word) !== null
+          ? el('p', { class: 'pos' }, word.pos || '', bookNoBadge(word))
+          : null,
         blankSentence(q.parts),
         buttonRow(listenButton(sentence)),
       ),

@@ -8,6 +8,8 @@ CLAUDE.md 7章（学習設計）が上位のルール。
 - ES モジュール、ビルドなし、外部ライブラリなし。コメントと UI 文言は日本語、名前は英語。
 - 日付は端末のローカル日付の文字列 `"YYYY-MM-DD"`。
 - 単語（word）と例文（sentence）の形は CLAUDE.md 6章のとおり。**出題には `sentenceIds[0]`（代表の例文）だけを使う。**
+- 単語には任意の項目 `bookNo`（本の番号）、`group`（まとめの見出し）、`relatedSentenceIds`（関係の深い例文。参考用）がある。
+  例文に出てこない語は `sentenceIds` が `[]`。この語は意味 4 択だけで出題し、関連例文は出題に使わない（表示だけ）。
 - テストは `tests/*.test.mjs`（`node --test tests/` で実行。node:test と node:assert を使う）。教材の文章は使わず、自作のダミーで書く。
 
 ## js/srs.js（復習スケジュール、純粋な関数だけ）
@@ -25,12 +27,24 @@ export function questionType(box): 'choice' | 'cloze' | 'spell'   // 0〜1 / 2�
 export function isDue(rec, dateStr): boolean            // rec があり、mastered でなく、due <= dateStr
 export function buildDailyMenu(words, progress, { date, newPerDay, newDoneToday }): { reviews: string[], news: string[] }
 //  - reviews：isDue の語の id。due が古い順、同じなら box が小さい順
-//  - news：progress に記録のない語の id を、代表の例文番号（sentenceIds[0]）の小さい順、同じなら id 順に、
-//          max(0, newPerDay - newDoneToday) 件
+//  - news：progress に記録のない語の id を orderNewWords(words) の順に、max(0, newPerDay - newDoneToday) 件
+export function orderNewWords(words): string[]          // 新しい語を出す順番（words 全体の id）
+//  - bookNo のある語：bookNo の小さい順（同じなら id 順）
+//  - bookNo の無い語：代表の例文（sentenceIds[0]）を sentenceIds に含む bookNo のある語のうち、最小の bookNo の直後
+//    （同じ位置の語どうしは例文番号順 → id 順）。その例文に bookNo のある語がいなければ、
+//    その例文より前（同じ例文を含む）に代表の例文がある bookNo のある語のうち最大の bookNo の直後（前に無ければ先頭）
+//  - 例文も bookNo も無い語は最後（id 順）
+//  - bookNo の語が 1 つも無ければ、今までどおり代表の例文番号順 → id 順（例文の無い語は最後）
 export function stageOf(sentenceId): number             // 50 文ごと：1〜50 → 1、51〜100 → 2 …（562 文で 12 ステージ）
 export function stageSummary(words, progress): Array<{ stage, from, to, total, learned, mastered, rate }>
+//  - 語のステージは stageSentenceId(word) で決める。null の語は数えない
 //  - learned：box >= 3 または mastered の語の数（「覚えた」とみなす）
 //  - rate：learned / total（0〜1）
+// 本の番号・例文にない語（words の任意の項目 bookNo / group / relatedSentenceIds。無い語は今までどおり）
+export function bookNoOf(word): number | null           // 1 以上の整数（数字だけの文字列も可）。無ければ null
+export function isNoSentenceWord(word): boolean         // sentenceIds が無い・空 → 例文にない語（出題は意味 4 択だけ）
+export function relatedSentenceId(word): number | null  // relatedSentenceIds の最初の有効な番号（関連例文。参考表示用）
+export function stageSentenceId(word): number | null    // 代表の例文。例文にない語は relatedSentenceIds[0]。無ければ null
 ```
 
 ## js/store.js（localStorage の学習記録）

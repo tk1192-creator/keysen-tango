@@ -15,6 +15,8 @@ syswords-pack.zip
 ```
 - mp3 はすでに圧縮されているので、zip では **無圧縮（STORED）** で入れる（作成・展開が速く、スマホのメモリにもやさしい）。json は DEFLATE でよい。
 - ファイル名は ASCII のみ。zip 内のパス区切りは `/`。
+- words の任意項目：`bookNo`（本の見出し語番号 1〜1813、重複不可）、`group`（まとめの見出し。例「家族」）、`relatedSentenceIds`（関係の深い例文の番号の配列）。無い語は項目ごと省く。
+  `source` が `book` の語（例文にない関連語）は `sentenceIds` が空配列 `[]` でもよい。
 
 ## pack.json
 ```json

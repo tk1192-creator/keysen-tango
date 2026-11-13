@@ -28,18 +28,34 @@
 //   6. buildDailyMenu：
 //      - 対象は words に含まれる語だけ（progress にだけある id は無視する）。同じ id が重複していたら 1 回だけ数える。
 //      - reviews の並び：due が古い順 → box が小さい順 → id 順（最後の id 順は結果を毎回同じにするため）。
-//      - news：sentenceIds が無い語は例文番号を最大とみなして最後に回す。
+//      - news：orderNewWords の順（9. を参照）。bookNo の無いデータでは、sentenceIds が無い語は最後に回す。
 //      - オプションの既定値：date = todayStr()、newPerDay = 10（CLAUDE.md 7章の初期値）、newDoneToday = 0。
 //        件数は max(0, floor(newPerDay - newDoneToday))。
 //      - id の比較は文字列の大小（"w0001" のようなゼロ埋めの id を想定）。
 //   7. stageOf：1 以上の整数でない sentenceId は 0（ステージなし）を返す（画面を止めないため例外は投げない）。
 //   8. stageSummary：
 //      - 語のステージは代表の例文（sentenceIds[0]）で決める。代表の例文が無効な語は数えない。
+//        例文にない語（sentenceIds が空）は relatedSentenceIds[0] で決める（9. を参照）。
 //      - ステージ 1 から「代表の例文番号の最大値が属するステージ」まで、途中に語が無いステージも
 //        total 0 で含めて連番で返す。
 //      - from = (stage-1)*50+1。to = stage*50 だが、語の sentenceIds（2 つ目以降も含む）に出てくる
 //        最大の例文番号で頭打ちにする（562 文なら最後のステージは 551〜562）。
 //      - mastered は rec.mastered === true の語の数。total 0 のステージの rate は 0。
+//   9. 本の番号（bookNo）と例文にない語（2026-11-13 追加。項目が無い語は今までどおり動く）
+//      - bookNo は 1 以上の整数（数字だけの文字列 "87" も数として読む）。それ以外は「無し」。
+//      - 例文にない語：sentenceIds が無い、または空の配列。出題は意味 4 択だけ（画面側で扱う）。
+//      - 語のステージを決める例文（stageSentenceId）：代表の例文が有効ならそれ。
+//        sentenceIds が無い・空の語は relatedSentenceIds[0]（有効なら）。どちらも無ければ null（数えない）。
+//      - 新しい語の順番（orderNewWords）：
+//        ① bookNo のある語は bookNo の小さい順（同じなら id 順）。
+//        ② bookNo の無い語は、代表の例文（sentenceIds[0]）を sentenceIds のどこかに含む bookNo のある語の
+//           うち最小の bookNo（「よりどころ」）の直後に置く。同じよりどころの語どうしは、例文番号順 → id 順。
+//        ③ よりどころが見つからない語（その例文に bookNo のある語がいない）は、
+//           「その例文より前（同じ例文を含む）に代表の例文がある bookNo のある語のうち、最大の bookNo」の直後に、
+//           例文番号順 → id 順で置く（前に 1 語も無ければ先頭）。本の番号の入力が途中でも、例文の順が大きく崩れないため。
+//        ④ 例文も bookNo も無い語は最後（id 順）。
+//        bookNo の語が 1 つも無いときは ③④だけになり、今までの順（例文番号順 → id 順、例文の無い語は最後）と同じ。
+//        よりどころは「まだ学習していない語」だけでなく、words 全体から探す（学習済みの語の後ろにも置けるように）。
 
 /** 箱0〜5 の次回までの日数（書き換えられないよう凍結） */
 export const INTERVALS = Object.freeze([0, 1, 3, 7, 14, 30]);
@@ -121,6 +137,11 @@ function isValidSentenceId(id) {
 function representativeSentenceId(word) {
   const ids = word && Array.isArray(word.sentenceIds) ? word.sentenceIds : [];
   return isValidSentenceId(ids[0]) ? ids[0] : null;
+}
+
+/** 例文番号の配列の先頭（有効なら）。無ければ null */
+function firstValidHead(ids) {
+  return Array.isArray(ids) && isValidSentenceId(ids[0]) ? ids[0] : null;
 }
 
 /** progress から語の記録を取る（自身のプロパティだけを見る） */
@@ -228,6 +249,117 @@ export function isDue(rec, dateStr) {
 }
 
 /**
+ * 本の番号（1 以上の整数）。無い・不正なら null。数字だけの文字列も数として読む。
+ * @param {object} word
+ * @returns {number|null}
+ */
+export function bookNoOf(word) {
+  if (!word) return null;
+  let n = word.bookNo;
+  if (typeof n === 'string' && /^\s*\d+\s*$/.test(n)) n = Number(n);
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+/**
+ * 例文にない語か（sentenceIds が無い、または空）。
+ * @param {object} word
+ * @returns {boolean}
+ */
+export function isNoSentenceWord(word) {
+  return !word || !Array.isArray(word.sentenceIds) || word.sentenceIds.length === 0;
+}
+
+/**
+ * 関連例文の番号（relatedSentenceIds の最初の有効な番号）。無ければ null。
+ * @param {object} word
+ * @returns {number|null}
+ */
+export function relatedSentenceId(word) {
+  if (!word || !Array.isArray(word.relatedSentenceIds)) return null;
+  for (const id of word.relatedSentenceIds) {
+    if (isValidSentenceId(id)) return id;
+  }
+  return null;
+}
+
+/**
+ * 語のステージを決める例文番号。代表の例文。例文にない語は relatedSentenceIds[0]。無ければ null。
+ * @param {object} word
+ * @returns {number|null}
+ */
+export function stageSentenceId(word) {
+  const rep = representativeSentenceId(word);
+  if (rep !== null) return rep;
+  if (isNoSentenceWord(word)) return firstValidHead(word && word.relatedSentenceIds);
+  return null;
+}
+
+/**
+ * 新しい語を出す順番に並べた id の配列（words 全体を並べる。重複した id は 1 回だけ）。
+ * 決め方はファイル先頭の「9.」を参照。
+ * @param {Array<object>} words
+ * @returns {string[]}
+ */
+export function orderNewWords(words) {
+  const list = [];
+  const seen = new Set();
+  for (const w of Array.isArray(words) ? words : []) {
+    if (!w || w.id == null || seen.has(w.id)) continue;
+    seen.add(w.id);
+    list.push(w);
+  }
+
+  // 例文番号 → その例文に出てくる bookNo のある語の最小の bookNo
+  const minBookBySentence = new Map();
+  for (const w of list) {
+    const no = bookNoOf(w);
+    if (no === null || !Array.isArray(w.sentenceIds)) continue;
+    for (const sid of w.sentenceIds) {
+      if (!isValidSentenceId(sid)) continue;
+      const cur = minBookBySentence.get(sid);
+      if (cur === undefined || no < cur) minBookBySentence.set(sid, no);
+    }
+  }
+
+  // 本の番号の入力が途中でも順番が大きく変わらないよう、
+  // 例文の中に bookNo のある語がいない語は「その例文より前（同じ例文を含む）に代表の例文がある
+  // bookNo のある語のうち、最大の bookNo」の直後に置く。前に 1 語も無ければ先頭（本の番号 0 の直後）。
+  const numbered = list
+    .map((w) => ({ no: bookNoOf(w), sid: representativeSentenceId(w) }))
+    .filter((x) => x.no !== null && x.sid !== null)
+    .sort((a, b) => a.sid - b.sid);
+  const prefixMax = [];  // [代表の例文番号, そこまでの最大の bookNo]
+  let runMax = 0;
+  for (const x of numbered) {
+    runMax = Math.max(runMax, x.no);
+    prefixMax.push([x.sid, runMax]);
+  }
+  const anchorBefore = (sid) => {
+    let lo = 0, hi = prefixMax.length - 1, ans = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (prefixMax[mid][0] <= sid) { ans = prefixMax[mid][1]; lo = mid + 1; } else hi = mid - 1;
+    }
+    return ans;
+  };
+
+  // 並べ替えのキー：[まとまり, 本の位置, 種類（0=bookNo の語, 1=その直後）, 例文番号, id]
+  const items = list.map((w) => {
+    const no = bookNoOf(w);
+    const sid = representativeSentenceId(w);
+    if (no !== null) return { id: w.id, group: 0, pos: no, kind: 0, sid: sid ?? Infinity };
+    if (sid === null) return { id: w.id, group: 2, pos: 0, kind: 0, sid: Infinity };
+    const anchor = minBookBySentence.get(sid);
+    if (anchor !== undefined) return { id: w.id, group: 0, pos: anchor, kind: 1, sid };
+    return { id: w.id, group: 0, pos: anchorBefore(sid), kind: 1, sid };
+  });
+  const cmpNum = (a, b) => (a === b ? 0 : a < b ? -1 : 1);
+  items.sort((a, b) => cmpNum(a.group, b.group) || cmpNum(a.pos, b.pos) || cmpNum(a.kind, b.kind)
+    || (a.group === 0 && a.kind === 0 ? 0 : cmpNum(a.sid, b.sid)) || compareStr(a.id, b.id));
+  return items.map((x) => x.id);
+}
+
+/**
  * 1 日のメニュー（復習と新規）を作る。
  * @param {Array<object>} words
  * @param {object} progress { [wordId]: rec }
@@ -247,15 +379,14 @@ export function buildDailyMenu(words, progress, options) {
   const list = Array.isArray(words) ? words : [];
   const seen = new Set();
   const dueItems = [];
-  const newItems = [];
+  const newIds = new Set();
 
   for (const w of list) {
     if (!w || w.id == null || seen.has(w.id)) continue;
     seen.add(w.id);
     const rec = recordOf(progress, w.id);
     if (rec === undefined) {
-      const sid = representativeSentenceId(w);
-      newItems.push({ id: w.id, sid: sid ?? Infinity });
+      newIds.add(w.id);
     } else if (isDue(rec, date)) {
       dueItems.push({
         id: w.id,
@@ -266,11 +397,12 @@ export function buildDailyMenu(words, progress, options) {
   }
 
   dueItems.sort((a, b) => compareStr(a.due, b.due) || a.box - b.box || compareStr(a.id, b.id));
-  newItems.sort((a, b) => (a.sid === b.sid ? 0 : a.sid < b.sid ? -1 : 1) || compareStr(a.id, b.id));
+  // 新規：本の番号順（orderNewWords）で並べ、記録の無い語だけを取る
+  const news = orderNewWords(list).filter((id) => newIds.has(id));
 
   return {
     reviews: dueItems.map((x) => x.id),
-    news: newItems.slice(0, newLimit).map((x) => x.id),
+    news: news.slice(0, newLimit),
   };
 }
 
@@ -305,8 +437,9 @@ export function stageSummary(words, progress) {
         if (isValidSentenceId(sid) && sid > maxAnyId) maxAnyId = sid;
       }
     }
-    const rep = representativeSentenceId(w);
+    const rep = stageSentenceId(w); // 例文にない語は関連例文で決める
     if (rep === null) continue;
+    if (rep > maxAnyId) maxAnyId = rep;
     if (rep > maxRepId) maxRepId = rep;
     items.push({ stage: stageOf(rep), rec: recordOf(progress, w.id) });
   }
